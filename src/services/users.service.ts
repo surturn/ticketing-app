@@ -1,0 +1,200 @@
+import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { db, withTransaction } from '../db/client.js';
+import { orders, users, type User } from '../db/schema.js';
+import type { AuthenticatedUser } from '../lib/firebase.js';
+import { logger } from '../lib/logger.js';
+import { recordTransition } from './ledger.service.js';
+
+// ---------------------------------------------------------------------------
+// Accounts.
+//
+// Every function here takes an already-verified `AuthenticatedUser`. None of them
+// accepts a uid or email as a plain string from a caller, because at that point
+// the value is only an assertion — the whole security property of this module is
+// that identity arrives from a verified token and nowhere else.
+// ---------------------------------------------------------------------------
+
+export interface SignInResult {
+  user: User;
+  /** True the first time this uid was seen. */
+  created: boolean;
+  /** Past guest orders attached to the account by this sign-in. */
+  linkedOrders: number;
+}
+
+/**
+ * Records a sign-in, creating the local row on first sight.
+ *
+ * Called on every sign-in rather than once at registration: Firebase is the
+ * source of truth for email and verification state, both of which change without
+ * this service being told (a buyer verifies their address, or changes it), so
+ * every sign-in is a chance to re-sync.
+ */
+export async function recordSignIn(
+  subject: AuthenticatedUser,
+): Promise<SignInResult> {
+  const now = new Date();
+
+  const [existing] = await db
+    .select()
+    .from(users)
+    .where(eq(users.id, subject.uid))
+    .limit(1);
+
+  // A different uid already holding this email means the same person signed up
+  // twice through different providers — password once, Google once. Firebase
+  // treats those as separate accounts unless linked. Refusing here would leave
+  // the buyer stuck, so the newer uid gets the account and the email moves with
+  // it; the older row keeps its orders and simply stops matching on email.
+  if (!existing) {
+    const [emailOwner] = await db
+      .select()
+      .from(users)
+      .where(and(eq(users.email, subject.email), sql`${users.id} <> ${subject.uid}`))
+      .limit(1);
+
+    if (emailOwner) {
+      logger.warn(
+        { email: subject.email, existingUid: emailOwner.id, newUid: subject.uid },
+        'email already held by another account — releasing it to the new sign-in',
+      );
+      // Suffixed so the unique index still holds while keeping the old value
+      // legible for support.
+      await db
+        .update(users)
+        .set({ email: `${emailOwner.email}#${emailOwner.id.slice(0, 8)}`, updatedAt: now })
+        .where(eq(users.id, emailOwner.id));
+    }
+  }
+
+  const [user] = await db
+    .insert(users)
+    .values({
+      id: subject.uid,
+      email: subject.email,
+      emailVerified: subject.emailVerified,
+      displayName: subject.displayName,
+      lastSeenAt: now,
+    })
+    .onConflictDoUpdate({
+      target: users.id,
+      set: {
+        email: subject.email,
+        emailVerified: subject.emailVerified,
+        // Only overwrite a stored name when the provider actually supplies one,
+        // so a Google sign-in does not blank a name set some other way.
+        ...(subject.displayName ? { displayName: subject.displayName } : {}),
+        lastSeenAt: now,
+        updatedAt: now,
+      },
+    })
+    .returning();
+
+  const created = !existing;
+  const linkedOrders = await linkGuestOrders(subject);
+
+  return { user: user!, created, linkedOrders };
+}
+
+/**
+ * Attaches past guest orders to an account.
+ *
+ * Gated on `email_verified`, and that gate is load-bearing: proven control of
+ * the address is the only thing that establishes the claim, so it is required
+ * before any order changes hands. Do not relax it.
+ *
+ * Firebase reports verification for password accounts only after the buyer
+ * clicks through, and immediately for federated sign-in, which is why the
+ * federated route is the smoothest path.
+ *
+ * Only unclaimed orders are touched (`user_id IS NULL`), so this can never move
+ * an order that already belongs to somebody.
+ */
+export async function linkGuestOrders(
+  subject: AuthenticatedUser,
+): Promise<number> {
+  if (!subject.emailVerified) return 0;
+
+  return withTransaction(async (tx) => {
+    const claimed = await tx
+      .update(orders)
+      .set({ userId: subject.uid, updatedAt: new Date() })
+      .where(and(eq(orders.buyerEmail, subject.email), isNull(orders.userId)))
+      .returning({ id: orders.id, reference: orders.reference, eventId: orders.eventId });
+
+    if (claimed.length === 0) return 0;
+
+    // Recorded per order: an order changing hands is exactly the kind of thing
+    // that needs explaining if it is ever questioned.
+    for (const order of claimed) {
+      await recordTransition(tx, {
+        entity: 'order',
+        entityId: order.id,
+        event: 'order.linked_to_account',
+        fromState: 'guest',
+        toState: 'account',
+        actor: `user:${subject.uid}`,
+        orderId: order.id,
+        eventId: order.eventId,
+        detail: {
+          reference: order.reference,
+          email: subject.email,
+          // Noted because it is the condition that authorised the transfer.
+          emailVerified: true,
+          signInProvider: subject.signInProvider,
+        },
+      });
+    }
+
+    logger.info(
+      { uid: subject.uid, count: claimed.length },
+      'linked guest orders to account',
+    );
+
+    return claimed.length;
+  });
+}
+
+/** Orders belonging to an account, newest first. */
+export async function getOrdersForUser(uid: string, limit = 50) {
+  return db
+    .select({
+      reference: orders.reference,
+      status: orders.status,
+      eventId: orders.eventId,
+      totalCents: orders.totalCents,
+      currency: orders.currency,
+      createdAt: orders.createdAt,
+      paidAt: orders.paidAt,
+    })
+    .from(orders)
+    .where(eq(orders.userId, uid))
+    .orderBy(desc(orders.createdAt))
+    .limit(Math.min(limit, 200));
+}
+
+export async function setAnnouncementsOptIn(
+  uid: string,
+  optIn: boolean,
+): Promise<User> {
+  const [updated] = await db
+    .update(users)
+    .set({ announcementsOptIn: optIn, updatedAt: new Date() })
+    .where(eq(users.id, uid))
+    .returning();
+
+  return updated!;
+}
+
+export async function updateProfile(
+  uid: string,
+  fields: { displayName?: string; phone?: string },
+): Promise<User> {
+  const [updated] = await db
+    .update(users)
+    .set({ ...fields, updatedAt: new Date() })
+    .where(eq(users.id, uid))
+    .returning();
+
+  return updated!;
+}

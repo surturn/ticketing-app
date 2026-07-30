@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { accountRoutes } from './account.routes.js';
 import { adminRoutes } from './admin.routes.js';
 import { checkInRoutes } from './checkin.routes.js';
 import { checkoutRoutes } from './checkout.routes.js';
@@ -14,6 +15,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   await app.register(orderRoutes);
   await app.register(webhookRoutes);
   await app.register(checkInRoutes);
+  await app.register(accountRoutes);
   // Registered in its own scope so the admin preHandler cannot leak onto the
   // public routes above.
   await app.register(adminRoutes);

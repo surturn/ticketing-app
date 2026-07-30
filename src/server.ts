@@ -1,7 +1,7 @@
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
 import sensible from '@fastify/sensible';
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyBaseLogger, type FastifyInstance } from 'fastify';
 import { env, isProduction } from './config/env.js';
 import { logger } from './lib/logger.js';
 import { cacheRedis } from './lib/redis.js';
@@ -10,7 +10,10 @@ import { registerRoutes } from './routes/index.js';
 
 export async function buildServer(): Promise<FastifyInstance> {
   const app = Fastify({
-    loggerInstance: logger,
+    // Widened to FastifyBaseLogger deliberately. Passing the concrete pino
+    // Logger makes Fastify specialise every generic on it, and the instance
+    // then stops matching the plain `FastifyInstance` that route plugins take.
+    loggerInstance: logger as FastifyBaseLogger,
     // Railway terminates TLS at its edge, so the client IP that rate limiting
     // and logs should use lives in X-Forwarded-For.
     trustProxy: true,
