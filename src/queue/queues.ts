@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Queue, type JobsOptions } from 'bullmq';
 import { env } from '../config/env.js';
 import { logger } from '../lib/logger.js';
@@ -17,6 +18,7 @@ export const QUEUE = {
   PAYMENT_RECONCILE: 'payment-reconcile',
   TICKET_ISSUANCE: 'ticket-issuance',
   NOTIFICATION: 'notification',
+  MAINTENANCE: 'maintenance',
 } as const;
 
 export type QueueName = (typeof QUEUE)[keyof typeof QUEUE];
@@ -44,7 +46,26 @@ export interface IssueTicketsJob {
 export type NotificationJob =
   | { kind: 'order-paid'; orderId: string }
   | { kind: 'order-failed'; orderId: string; reason: string }
-  | { kind: 'tickets-issued'; orderId: string };
+  | { kind: 'tickets-issued'; orderId: string }
+  // One job per recipient rather than one per event. A single job mailing the
+  // whole list would resend to everyone on a retry after a partial failure;
+  // per-recipient jobs dedupe individually and retry in isolation.
+  | {
+      kind: 'event-announced';
+      eventId: string;
+      email: string;
+      unsubscribeToken: string | null;
+    };
+
+/** Fans an event announcement out into one notification job per recipient. */
+export interface AnnounceEventJob {
+  eventId: string;
+}
+
+/** Retires events that finished more than the retention window ago. */
+export interface ArchivePastEventsJob {
+  afterDays?: number;
+}
 
 // ─── Connection ────────────────────────────────────────────────────────────
 
@@ -59,11 +80,27 @@ const defaultJobOptions: JobsOptions = {
   removeOnFail: { age: 24 * 3_600, count: 5_000 },
 };
 
-function makeQueue<T>(name: QueueName): Queue<T> {
+/**
+ * Delivery gets a much longer runway than everything else.
+ *
+ * The default policy exhausts in about thirty seconds. That is the right shape
+ * for a transient blip, and the wrong shape for the interruptions mail delivery
+ * actually sees, which are resolved by an operator rather than by time alone.
+ *
+ * Eight attempts backing off from thirty seconds spans roughly an hour, so a
+ * routine interruption resolves itself with nothing to replay by hand.
+ */
+const deliveryJobOptions: JobsOptions = {
+  ...defaultJobOptions,
+  attempts: 8,
+  backoff: { type: 'exponential', delay: 30_000 },
+};
+
+function makeQueue<T>(name: QueueName, jobOptions = defaultJobOptions): Queue<T> {
   return new Queue<T>(name, {
     connection,
     prefix: `${env.REDIS_PREFIX}:bull`,
-    defaultJobOptions,
+    defaultJobOptions: jobOptions,
   });
 }
 
@@ -74,14 +111,35 @@ export const paymentReconcileQueue = makeQueue<ReconcilePaymentJob>(
   QUEUE.PAYMENT_RECONCILE,
 );
 export const ticketIssuanceQueue = makeQueue<IssueTicketsJob>(QUEUE.TICKET_ISSUANCE);
-export const notificationQueue = makeQueue<NotificationJob>(QUEUE.NOTIFICATION);
+export const notificationQueue = makeQueue<NotificationJob>(
+  QUEUE.NOTIFICATION,
+  deliveryJobOptions,
+);
+export const maintenanceQueue = makeQueue<ArchivePastEventsJob | AnnounceEventJob>(
+  QUEUE.MAINTENANCE,
+);
 
 export const allQueues = [
   orderExpiryQueue,
   paymentReconcileQueue,
   ticketIssuanceQueue,
   notificationQueue,
+  maintenanceQueue,
 ];
+
+// ─── Job ids ───────────────────────────────────────────────────────────────
+//
+// BullMQ rejects a colon in a custom job id — it uses `:` as its own Redis key
+// separator, and `queue.add` throws `Custom Ids cannot contain :`. Every id here
+// is built through this helper so that constraint is enforced in one place
+// rather than remembered at five call sites.
+//
+// This is not cosmetic: a throw from `add()` on the checkout path happens after
+// the inventory transaction has committed, so getting it wrong strands seats.
+
+function jobId(...parts: Array<string | number>): string {
+  return parts.join('-');
+}
 
 // ─── Job names ─────────────────────────────────────────────────────────────
 
@@ -91,6 +149,8 @@ export const JOB = {
   RECONCILE_PAYMENT: 'reconcile-payment',
   ISSUE_TICKETS: 'issue-tickets',
   NOTIFY: 'notify',
+  ARCHIVE_PAST_EVENTS: 'archive-past-events',
+  ANNOUNCE_EVENT: 'announce-event',
 } as const;
 
 // ─── Producers ─────────────────────────────────────────────────────────────
@@ -107,7 +167,7 @@ export async function scheduleOrderExpiry(
   await orderExpiryQueue.add(
     JOB.EXPIRE_ORDER,
     { orderId },
-    { jobId: `expire:${orderId}`, delay },
+    { jobId: jobId('expire', orderId), delay },
   );
 }
 
@@ -115,7 +175,7 @@ export async function scheduleOrderExpiry(
  *  re-checks order state before releasing anything, so a missed cancel is safe. */
 export async function cancelOrderExpiry(orderId: string): Promise<void> {
   try {
-    const job = await orderExpiryQueue.getJob(`expire:${orderId}`);
+    const job = await orderExpiryQueue.getJob(jobId('expire', orderId));
     await job?.remove();
   } catch (error) {
     logger.debug({ err: error, orderId }, 'could not cancel order expiry job');
@@ -137,7 +197,7 @@ export async function scheduleReconcile(
   await paymentReconcileQueue.add(
     JOB.RECONCILE_PAYMENT,
     { paymentId, attempt },
-    { jobId: `reconcile:${paymentId}:${attempt}`, delay },
+    { jobId: jobId('reconcile', paymentId, attempt), delay },
   );
 }
 
@@ -147,14 +207,38 @@ export async function enqueueTicketIssuance(orderId: string): Promise<void> {
     { orderId },
     // Issuance is idempotent, but deduping keeps the queue clean when both the
     // callback and the reconciler settle the same order.
-    { jobId: `issue:${orderId}` },
+    { jobId: jobId('issue', orderId) },
   );
 }
 
 export async function enqueueNotification(job: NotificationJob): Promise<void> {
-  await notificationQueue.add(JOB.NOTIFY, job, {
-    jobId: `notify:${job.kind}:${job.orderId}`,
-  });
+  // Announcements are keyed on event plus recipient; order notifications on the
+  // order. Both dedupe, but on different identities.
+  const id =
+    job.kind === 'event-announced'
+      ? jobId('notify', job.kind, job.eventId, hashForJobId(job.email))
+      : jobId('notify', job.kind, job.orderId);
+
+  await notificationQueue.add(JOB.NOTIFY, job, { jobId: id });
+}
+
+/**
+ * Short stable digest of an email, for use inside a job id.
+ *
+ * The address itself cannot go in: BullMQ job ids reject `:`, and an email is
+ * also not something to leave sitting in Redis keys in clear text.
+ */
+function hashForJobId(value: string): string {
+  return createHash('sha256').update(value).digest('hex').slice(0, 16);
+}
+
+/** Queues the fan-out for a newly published event. */
+export async function enqueueEventAnnouncement(eventId: string): Promise<void> {
+  await maintenanceQueue.add(
+    JOB.ANNOUNCE_EVENT,
+    { eventId },
+    { jobId: jobId('announce', eventId) },
+  );
 }
 
 /**
@@ -171,6 +255,20 @@ export async function registerRepeatableJobs(): Promise<void> {
       removeOnComplete: { count: 10 },
     },
   );
+
+  // Hourly rather than by the minute: the retention window is measured in days,
+  // so an event archiving up to an hour late is invisible, and the sweep is a
+  // table scan that has no reason to run 1,440 times a day.
+  await maintenanceQueue.add(
+    JOB.ARCHIVE_PAST_EVENTS,
+    {},
+    {
+      jobId: 'archive-past-events',
+      repeat: { every: 3_600_000 },
+      removeOnComplete: { count: 24 },
+    },
+  );
+
   logger.info('repeatable jobs registered');
 }
 

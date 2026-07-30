@@ -1,6 +1,7 @@
 import type { Worker } from 'bullmq';
 import { logger } from '../../lib/logger.js';
 import { registerRepeatableJobs } from '../queues.js';
+import { createMaintenanceWorker } from './maintenance.worker.js';
 import { createNotificationWorker } from './notification.worker.js';
 import { createOrderExpiryWorker } from './order-expiry.worker.js';
 import { createPaymentReconcileWorker } from './payment-reconcile.worker.js';
@@ -16,6 +17,7 @@ export async function startWorkers(): Promise<Worker[]> {
     createPaymentReconcileWorker(),
     createTicketIssuanceWorker(),
     createNotificationWorker(),
+    createMaintenanceWorker(),
   ];
 
   for (const worker of workers) {
