@@ -1,0 +1,131 @@
+@import 'tailwindcss';
+
+/* Self-hosted rather than loaded from a font CDN: no third-party request on the
+   critical path, nothing to break if that host is blocked, and no layout shift
+   while a webfont arrives. Weights are limited to the ones the brand actually
+   uses — 700/800 display, 400/500 body. */
+@import '@fontsource/plus-jakarta-sans/700.css';
+@import '@fontsource/plus-jakarta-sans/800.css';
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+
+/* ---------------------------------------------------------------------------
+   Design tokens.
+
+   Declared in `@theme` so Tailwind generates utilities from them — `bg-primary`,
+   `text-gold`, `border-muted`, `ring-primary/20` — which is what the brand
+   guidelines reference directly. Semantic names, not literal ones: the doc says
+   gold means "success, VIP, celebration", so `text-gold` at a call site carries
+   that intent, where `text-amber-500` would not.
+
+   The palette's greys are Tailwind's slate scale: the doc's #94A3B8 is slate-400
+   and #334155 is slate-700, so slate-* utilities compose cleanly with these.
+   --------------------------------------------------------------------------- */
+@theme {
+  /* Primary action — drives every forward step. Tailwind blue-500. */
+  --color-primary: #3b82f6;
+  --color-primary-hover: #60a5fa;
+  --color-primary-ring: rgb(59 130 246 / 0.2);
+
+  /* Backgrounds: deep slate/navy, never pure black. */
+  --color-bg: #0b121c;
+  --color-surface: #111a27;
+  --color-elevated: #1a2433;
+
+  /* Reserved strictly for success, VIP tiers and celebration. */
+  --color-gold: #f59e0b;
+  --color-gold-glow: rgb(245 158 11 / 0.4);
+
+  /* Muted text and structural borders. */
+  --color-muted: #94a3b8;
+  --color-line: #334155;
+
+  /* Inline field validation only — see the optimistic-validation rules. */
+  --color-valid: #10b981;
+
+  --font-display: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+
+  /* The success spring from the animation spec, so every celebratory
+     transition shares one physical feel. */
+  --ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ---------------------------------------------------------------------------
+   Base layer
+   --------------------------------------------------------------------------- */
+@layer base {
+  html {
+    /* Dark-mode first: declared so form controls, scrollbars and the overscroll
+       area are dark too, rather than flashing white at the edges. */
+    color-scheme: dark;
+    background-color: var(--color-bg);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--color-bg);
+    color: #e2e8f0;
+    font-family: var(--font-sans);
+    font-weight: 400;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    font-weight: 800;
+    /* "Keep tracking slightly tight for high impact." */
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+  }
+
+  /* Focus is never removed, only restyled — a keyboard user must always be able
+     to see where they are. */
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+
+  /* Honour a reduced-motion preference. The celebration is the most motion-heavy
+     moment in the product, so this is not optional: the ticket still appears and
+     still reads as a success, it simply does not fly or burst. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Utilities the brand doc calls for by description rather than by class
+   --------------------------------------------------------------------------- */
+@utility gold-glow {
+  /* The radial pulse behind a revealed ticket. */
+  background-image: radial-gradient(
+    circle at center,
+    var(--color-gold-glow) 0%,
+    transparent 70%
+  );
+}
+
+@utility skeleton {
+  background-color: var(--color-elevated);
+  animation: skeleton-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes skeleton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
