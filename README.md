@@ -1,240 +1,229 @@
-﻿# ticketing-api
+# ticketing-api
 
-A standalone ticketing and payments backend. One instance serves many events, so
-every site in the template portfolio calls the same service instead of each one
-carrying its own n8n workflow.
+Event ticketing and payments backend with M-Pesa settlement. A single instance
+serves many events, so every site in the portfolio integrates against one service.
 
-**Stack:** Node + Fastify · Postgres + Drizzle · Redis (cache) + BullMQ (workers)
-· M-Pesa Daraja.
-
----
-
-## Why it is shaped this way
-
-The design target is a flash sale: thousands of people hitting checkout for the
-same tier in the same few seconds. Three decisions follow from that.
-
-**Inventory lives in one row per tier, and reservations are a single statement.**
-
-```
-available = quantity_total - quantity_reserved - quantity_sold
-```
-
-A checkout moves `available → reserved`; settlement moves `reserved → sold`; an
-expiry moves `reserved → available`. Each transition is one conditional `UPDATE`
-that both checks and mutates:
-
-```sql
-UPDATE ticket_tiers
-   SET quantity_reserved = quantity_reserved + $qty
- WHERE id = $tier
-   AND quantity_total - quantity_reserved - quantity_sold >= $qty
-RETURNING *;
-```
-
-Under contention every tier row is a serialization point, so holding the lock
-across a `SELECT` and then an `UPDATE` would double the critical section. A
-`CHECK` constraint backstops the whole thing — even a regression in application
-code cannot oversell, the transaction just aborts.
-
-**Nothing slow happens inside a transaction.** The Daraja STK Push runs *after*
-the commit. If it fails, a compensating release returns the seats immediately.
-
-**The request path does two things only** — hold inventory, authorise payment.
-Ticket generation, receipts, hold expiry and payment reconciliation are all
-queued.
+**Stack:** Node · Fastify · PostgreSQL · Drizzle ORM · Redis · BullMQ · M-Pesa
+Daraja · Brevo
 
 ---
 
-## Local setup
+## Capabilities
+
+- **Oversell-safe inventory** — reservations are single-statement conditional
+  updates, with a database constraint as the final guarantee.
+- **M-Pesa STK Push** — Paybill and Buy Goods (Till), sandbox and production.
+- **Idempotent checkout** — retries on unreliable mobile connections are free.
+- **Automatic reconciliation** — payments are confirmed directly against Daraja
+  when a callback does not arrive.
+- **Signed QR tickets** — offline-verifiable at the gate, with single-use check-in.
+- **Append-only audit ledger** — every state transition, hash-chained and enforced
+  by the database.
+- **Transactional email** — receipts and ticket delivery via Brevo.
+
+---
+
+## Architecture
+
+The design target is a flash sale: thousands of concurrent buyers competing for the
+same tier within seconds. Three decisions follow from it.
+
+**Inventory is counter-based, and each transition is a single statement.** A tier
+tracks its total, reserved and sold quantities. Checkout moves availability into
+reserved, settlement moves reserved into sold, and expiry returns it. Because every
+transition both tests its invariant and applies its change in one statement, a
+contended tier row is locked for one round trip rather than two. A database
+constraint backs the whole arrangement, so overselling aborts the transaction
+regardless of application behaviour.
+
+**Nothing slow runs inside a transaction.** The payment gateway is called after the
+inventory transaction commits, never within it. If that call fails, a compensating
+release returns the seats immediately rather than leaving the buyer to wait out the
+hold.
+
+**The synchronous path does two things** — reserve inventory, authorise payment.
+Everything else is queued.
+
+| Queue | Responsibility |
+|---|---|
+| `order-expiry` | Releases a hold when it lapses, with a periodic safety net |
+| `payment-reconcile` | Confirms payment state against the gateway |
+| `ticket-issuance` | Generates admissions after settlement |
+| `notification` | Receipts and ticket delivery |
+
+Reconciliation is essential rather than optional: callbacks are lost, delayed, or
+delivered to a service that was mid-redeploy. Without it, a buyer who paid
+successfully would never receive a ticket. Settlement is idempotent and
+concurrency-safe — the callback and the reconciler compete by design, and exactly
+one can transition a payment out of its pending state.
+
+### Audit ledger
+
+Every order, payment, inventory and ticket transition is appended to a ledger with
+an actor, before and after state, and the identifiers required for reconciliation,
+including the M-Pesa receipt.
+
+- **Append-only, enforced by PostgreSQL.** Database triggers reject mutation and
+  apply to the table owner, which is the role the application connects as.
+- **Hash-chained.** Each entry's SHA-256 digest covers its own contents together
+  with its predecessor's, making any alteration detectable.
+- **Transactionally consistent.** Entries are written in the same transaction as
+  the change they describe, so the ledger cannot record an operation that rolled
+  back.
+
+Chains are scoped per order rather than globally. A single chain would serialise
+every writer on one tip and, because the lock is transaction-scoped, serialise the
+entire sale.
+
+---
+
+## Getting started
+
+Requires Node 20.11+ and Docker.
 
 ```bash
-docker compose up -d          # Postgres + Redis
-cp .env.example .env          # then fill in the secrets below
+docker compose up -d     # PostgreSQL + Redis
+cp .env.example .env
 npm install
 
-npm run db:generate           # generate SQL migrations from src/db/schema.ts
-npm run db:migrate            # apply them
-npm run db:seed               # optional: one published event with 3 tiers
+npm run db:migrate
+npm run db:seed          # optional: one published event with three tiers
 
-npm run dev                   # API   → http://localhost:4000
-npm run dev:worker            # worker (separate terminal)
+npm run dev              # API    → http://localhost:4000
+npm run dev:worker       # worker → separate terminal
 ```
 
-Generate the three required secrets:
+Generate the required secrets, using distinct values per environment:
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
-…for `TICKET_SIGNING_SECRET`, `SCANNER_JWT_SECRET` and `ADMIN_API_KEY`.
 Rotating `TICKET_SIGNING_SECRET` invalidates every QR code already issued.
 
-M-Pesa credentials are optional — the service boots without them and only fails
-when a payment is actually attempted, so frontend work is unblocked.
+M-Pesa and Brevo credentials are optional in development. Payments fail only when
+attempted, and email is logged rather than sent, so frontend work is unblocked.
+
+Integration details are distributed separately.
 
 ---
 
-## API
+## Configuration
 
-### Public
+See `.env.example` for the complete list. Values worth calling out:
 
-| Method | Path | Purpose |
+| Variable | Notes |
+|---|---|
+| `DATABASE_POOLER_MODE` | Set to `transaction` behind PgBouncer or Supavisor in transaction mode |
+| `ORDER_HOLD_MINUTES` | How long seats are held while the buyer pays |
+| `RUN_WORKERS_IN_API` | Runs workers in-process; suitable only for small deployments |
+| `CORS_ORIGINS` | Comma-separated origins permitted to call the public API |
+| `MPESA_CALLBACK_URL` | Validated at startup; must be HTTPS |
+
+An empty value is treated as unset, so blanking a variable and omitting it are
+equivalent.
+
+### M-Pesa environments
+
+| | Sandbox | Production (Till / Buy Goods) |
 |---|---|---|
-| `GET` | `/api/events` | Published events |
-| `GET` | `/api/events/:slug` | One event with its tiers and availability |
-| `GET` | `/api/events/:slug/availability` | Live counters (cached 5s) |
-| `POST` | `/api/checkout` | Hold seats + start payment |
-| `GET` | `/api/orders/:reference` | Full order, including tickets once paid |
-| `GET` | `/api/orders/:reference/status` | Lightweight poll while paying |
-| `POST` | `/api/orders/:reference/cancel` | Buyer backed out |
-| `POST` | `/api/webhooks/mpesa` | Safaricom callback |
+| `MPESA_ENVIRONMENT` | `sandbox` | `production` |
+| `MPESA_SHORTCODE` | `174379` | Shortcode the passkey was issued against |
+| `MPESA_TRANSACTION_TYPE` | `CustomerPayBillOnline` | `CustomerBuyGoodsOnline` |
+| `MPESA_PARTY_B` | *(blank)* | Till number |
 
-### Authenticated
+Safaricom's sandbox shortcode `174379` is a Paybill, so sandbox testing requires
+`CustomerPayBillOnline` even when production uses Buy Goods. `MPESA_SHORTCODE`
+signs the request; `MPESA_PARTY_B` is the shortcode funds credit to, and under Buy
+Goods the two are commonly different.
 
-| Method | Path | Auth |
-|---|---|---|
-| `POST` | `/api/checkin` | Scanner JWT, or admin key |
-| `*` | `/api/admin/*` | `x-api-key` |
-
-Admin covers events and tiers, order and payment listings, per-event stats,
-minting scanner tokens, and voiding a ticket.
-
-### Checkout
-
-```http
-POST /api/checkout
-Content-Type: application/json
-Idempotency-Key: 6f1c…            # stable per basket — retries are free
-
-{
-  "eventSlug": "sample-summit-2026",
-  "items": [{ "tierId": "…uuid…", "quantity": 2 }],
-  "buyer": { "name": "Asha", "email": "asha@example.com", "phone": "0712345678" }
-}
-```
-
-```json
-{
-  "orderId": "…", "reference": "TKT-8F3KQ2XA",
-  "status": "awaiting_payment",
-  "totalCents": 500000, "currency": "KES",
-  "expiresAt": "2026-07-28T12:34:56.000Z",
-  "payment": { "gateway": "mpesa", "gatewayRef": "ws_CO_…",
-               "customerMessage": "Enter your M-Pesa PIN" },
-  "idempotentReplay": false
-}
-```
-
-Then poll `/api/orders/TKT-8F3KQ2XA/status` until `status` is `paid`, `failed`,
-`cancelled` or `expired`.
-
-### Errors
-
-Every error has the same shape:
-
-```json
-{ "error": { "code": "insufficient_inventory",
-             "message": "Only 3 ticket(s) left for \"VIP\"",
-             "details": { "available": 3, "requested": 5 },
-             "retryable": false } }
-```
-
-**Branch on `code`, and respect `retryable`.** During a sale a 409 is normal,
-not exceptional — `inventory_contended` means try again in a moment, while
-`insufficient_inventory` with `retryable: false` means genuinely sold out.
+Local development requires a public tunnel — for example `ngrok http 4000` — since
+Safaricom must be able to reach the callback.
 
 ---
 
-## Background jobs
+## Deployment
 
-| Queue | Job | What it does |
+Two services run from this repository and share one image:
+
+| Service | Command | Scaling |
 |---|---|---|
-| `order-expiry` | `expire-order` | Delayed to the exact moment a hold lapses |
-| `order-expiry` | `sweep-expired-orders` | Every 60s; catches jobs lost to a Redis restart |
-| `payment-reconcile` | `reconcile-payment` | Polls Daraja when a callback never arrives |
-| `ticket-issuance` | `issue-tickets` | Generates admissions after settlement |
-| `notification` | `notify` | Receipts and ticket delivery |
+| API | `node dist/index.js` | Autoscale on CPU |
+| Worker | `node dist/worker.js` | Fixed; bounded by PostgreSQL and Daraja, not inbound HTTP |
 
-Reconciliation is not optional. Safaricom callbacks get lost, get delivered to a
-URL that was down during a deploy, or arrive twenty minutes late. Without the
-reconciler those orders sit in `awaiting_payment` until the hold lapses and a
-buyer who genuinely paid never receives a ticket.
-
----
-
-## Deploying to Railway
-
-Three services off this one repo:
-
-1. **API** — `node dist/index.js`, autoscaled on CPU.
-2. **Worker** — same image, `node dist/worker.js`. **Do not autoscale this with
-   the API**; its throughput is bounded by Postgres and Daraja, not by inbound
-   HTTP.
-3. **PgBouncer** — Railway's Postgres ships without a pooler, and a flash sale
-   will exceed `max_connections` long before it exhausts CPU.
+A connection pooler is recommended. Managed PostgreSQL frequently ships without
+one, and a flash sale will exhaust `max_connections` well before CPU.
 
 Run `npm run db:migrate` as the pre-deploy command so a release never serves
-traffic against an old schema.
+traffic against an outdated schema.
 
-Set `MPESA_CALLBACK_URL` to `https://<api-host>/api/webhooks/mpesa` and set
-`MPESA_CALLBACK_TOKEN` — it is appended as `?token=…` and checked on every
-callback.
+The API and storefront are served from one origin, which keeps CORS out of the
+buyer path and the payment callback on the same domain.
 
-### The pooler setting that will bite you
+### Connection pooling
 
-If you put PgBouncer or Supavisor in **transaction** mode in front of Postgres,
-set:
+Behind PgBouncer or Supavisor in transaction mode, set:
 
 ```
 DATABASE_POOLER_MODE=transaction
 ```
 
-This disables prepared statements. Without it you get intermittent
-`prepared statement "s1" already exists` errors that only appear once
-connections start being reused — i.e. under load, during the sale.
+This disables prepared statements. Without it, `prepared statement "s1" already
+exists` appears intermittently once connections begin to be reused — that is, under
+load.
 
-Health checks: `/health` for liveness (touches nothing), `/health/ready` for
-readiness (checks Postgres and Redis).
+### Health checks
+
+Liveness and readiness probes are exposed for the platform to poll; readiness
+verifies PostgreSQL and Redis connectivity. Paths are listed in the integration
+notes.
 
 ---
 
 ## Testing
 
 ```bash
-npm test                              # unit tests only
-RUN_DB_TESTS=true npm test            # + concurrency tests against Postgres
+npm test                       # unit tests
+RUN_DB_TESTS=true npm test     # adds PostgreSQL and Redis integration suites
+npm run check:lifecycle        # end-to-end checkout against the local stack
 ```
 
-The integration tests in `src/services/inventory.test.ts` are the ones worth
-running before any change to reservation logic: they fire 50 concurrent buyers
-at a 10-seat tier and assert that exactly 10 succeed. **They truncate tables —
-point `DATABASE_URL` at a throwaway database.**
+Integration suites require both containers and run against a dedicated database.
+`src/test/setup.ts` points `DATABASE_URL` at `ticketing_test`, created once:
+
+```bash
+docker exec ticketing-postgres psql -U ticketing -d postgres \
+  -c "CREATE DATABASE ticketing_test OWNER ticketing;"
+DATABASE_URL=postgres://ticketing:ticketing@localhost:5432/ticketing_test \
+  npm run db:migrate
+```
+
+Coverage of note:
+
+- **`inventory.test.ts`** — 50 concurrent buyers against a 10-seat tier, asserting
+  exactly 10 succeed. Run before any change to reservation logic.
+- **`queues.test.ts`** — every producer enqueues against a live broker.
+- **`ledger.test.ts`** — asserts the database rejects mutation of the ledger, that
+  entries roll back with their transaction, and that concurrent appends chain
+  correctly.
+
+Ledger entries are never cleared, by design. Reset a development database by
+dropping it:
+
+```bash
+docker exec ticketing-postgres psql -U ticketing -d postgres \
+  -c "DROP DATABASE ticketing WITH (FORCE);"
+```
 
 ---
 
-## Status
+## Roadmap
 
-Written but **not yet compiled or run** — no dependency install has happened in
-this environment. Before trusting any of it:
+- Buyer accounts with authenticated order history
+- Automated refunds via Daraja B2C
+- SMS delivery alongside email
+- Reserved seating
 
-1. `npm install`, then `npm run typecheck`.
-2. `npm run db:generate` — the `drizzle/` migration folder does not exist yet;
-   review the generated SQL, particularly the partial unique indexes on
-   `orders.idempotency_key` and `payments.receipt`.
-3. `RUN_DB_TESTS=true npm test`.
-4. Exercise a sandbox STK push end to end; the callback needs a public URL, so
-   use an ngrok tunnel locally.
+---
 
-### Not implemented
-
-- **Notification delivery.** `notification.worker.ts` resolves the order and
-  logs what it *would* send. No email or SMS provider was chosen, so plugging
-  one in (Resend, nodemailer, Africa's Talking) is a single function swap in
-  `deliver()`.
-- **Refunds.** Orders that settle after their hold lapsed on a sold-out tier are
-  flagged `metadata.refundRequired` and surfaced in `/api/admin/events/:id/stats`,
-  but reversing the payment is manual. Daraja B2C/Reversal needs an initiator
-  credential and a security certificate that are not wired up.
-- **Seat selection.** Inventory is counted, not mapped. Allocated seating would
-  need a `seats` table and a different locking strategy.
+Proprietary. All rights reserved.
