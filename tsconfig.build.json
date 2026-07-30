@@ -1,4 +1,10 @@
 {
   "extends": "./tsconfig.json",
+  // rootDir lives here, not in the base config: the base config also has to
+  // typecheck drizzle.config.ts, which sits outside src/ and would otherwise
+  // trip TS6059. The build excludes it, so pinning rootDir is safe here.
+  "compilerOptions": {
+    "rootDir": "src"
+  },
   "exclude": ["node_modules", "dist", "src/**/*.test.ts", "drizzle.config.ts"]
 }

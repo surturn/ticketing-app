@@ -7,3 +7,5 @@ dist/
 certs/*.cer
 certs/*.pem
 coverage/
+/docs
+service_account.json

@@ -9,3 +9,10 @@ process.env.SCANNER_JWT_SECRET ??= 'test-scanner-jwt-secret-at-least-32-characte
 process.env.ADMIN_API_KEY ??= 'test-admin-api-key-value';
 process.env.CACHE_ENABLED ??= 'false';
 process.env.LOG_LEVEL ??= 'silent';
+
+// A separate BullMQ/cache namespace, for the same reason DATABASE_URL points at a
+// separate database: without it the suite shares queues with whatever is running
+// locally. A dev worker would drain the jobs these tests just enqueued and the
+// waiting-count assertions would fail for reasons that have nothing to do with
+// the code — and worse, a test run would consume real queued work.
+process.env.REDIS_PREFIX ??= 'ticketing-test';
