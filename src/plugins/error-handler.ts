@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyError, FastifyInstance } from 'fastify';
 import { ZodError } from 'zod';
 import { AppError, isRetryablePgError } from '../lib/errors.js';
 import { isProduction } from '../config/env.js';
@@ -44,13 +44,18 @@ export function registerErrorHandler(app: FastifyInstance): void {
       });
     }
 
+    // Everything past this point is either a FastifyError or a plain throw, and
+    // Fastify types the handler's argument as `unknown`. One narrowing here
+    // beats casting at each of the six reads below.
+    const err = error as FastifyError;
+
     // Fastify's own validation (schema on a route)
-    if (error.validation) {
+    if (err.validation) {
       return reply.status(400).send({
         error: {
           code: 'validation_failed',
-          message: error.message,
-          details: error.validation,
+          message: err.message,
+          details: err.validation,
           retryable: false,
         },
       });
@@ -67,7 +72,7 @@ export function registerErrorHandler(app: FastifyInstance): void {
       });
     }
 
-    if (error.statusCode === 429) {
+    if (err.statusCode === 429) {
       return reply.status(429).send({
         error: {
           code: 'rate_limited',
@@ -79,12 +84,12 @@ export function registerErrorHandler(app: FastifyInstance): void {
 
     request.log.error({ err: error }, 'unhandled error');
 
-    return reply.status(error.statusCode ?? 500).send({
+    return reply.status(err.statusCode ?? 500).send({
       error: {
         code: 'internal_error',
         message: isProduction
           ? 'Something went wrong on our end.'
-          : (error.message ?? 'Internal error'),
+          : (err.message ?? 'Internal error'),
         retryable: false,
       },
     });

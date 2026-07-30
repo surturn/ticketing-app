@@ -14,6 +14,7 @@ import { generateOrderReference } from '../lib/codes.js';
 import { AppError, badRequest, conflict, isRetryablePgError } from '../lib/errors.js';
 import { logger } from '../lib/logger.js';
 import { normalizePhone } from '../lib/phone.js';
+import { centsToMpesaAmount } from '../lib/money.js';
 import {
   cancelOrderExpiry,
   scheduleOrderExpiry,
@@ -21,8 +22,11 @@ import {
 } from '../queue/queues.js';
 import { env } from '../config/env.js';
 import { getEventRowBySlug } from './events.service.js';
+import { recordTransition } from './ledger.service.js';
 import {
+  availableSeats,
   explainReservationFailure,
+  hasRoomFor,
   releaseOrder,
   reserveTier,
   sortForLocking,
@@ -44,13 +48,29 @@ export interface CheckoutItemInput {
   quantity: number;
 }
 
+export interface BuyerInput {
+  name: string;
+  /** Mandatory — validated and lowercased at the route boundary. */
+  email: string;
+  /** Already normalised to 254… by the route schema. */
+  phone: string;
+}
+
 export interface CheckoutInput {
   eventSlug: string;
   items: CheckoutItemInput[];
-  buyer: { name: string; email?: string; phone: string };
+  buyer: BuyerInput;
   idempotencyKey?: string;
   gateway?: GatewayName;
   metadata?: Record<string, unknown>;
+  /**
+   * Account to attach the order to, or null for a guest purchase.
+   *
+   * Must come from a verified token at the route boundary. Accepting it as a
+   * plain string here is safe only because no route passes anything a caller
+   * supplied.
+   */
+  userId?: string | null;
 }
 
 export interface CheckoutResult {
@@ -201,8 +221,9 @@ export async function createCheckout(
         .values({
           eventId: event.id,
           reference,
-          buyerName: input.buyer.name.trim(),
-          buyerEmail: input.buyer.email?.trim() || null,
+          userId: input.userId ?? null,
+          buyerName: input.buyer.name,
+          buyerEmail: input.buyer.email,
           buyerPhone: phone,
           subtotalCents,
           feeCents: 0,
@@ -218,6 +239,42 @@ export async function createCheckout(
       await tx.insert(orderItems).values(
         lines.map((line) => ({ ...line, orderId: created!.id })),
       );
+
+      await recordTransition(tx, {
+        entity: 'order',
+        entityId: created!.id,
+        event: 'order.created',
+        fromState: null,
+        toState: 'pending',
+        actor: 'system:checkout',
+        orderId: created!.id,
+        eventId: event.id,
+        amountCents: subtotalCents,
+        detail: {
+          reference,
+          items: lines.map((line) => ({
+            tierId: line.tierId,
+            tierName: line.tierName,
+            quantity: line.quantity,
+            unitPriceCents: line.unitPriceCents,
+          })),
+        },
+      });
+
+      // Inventory moved available → reserved for each tier in this basket.
+      for (const line of lines) {
+        await recordTransition(tx, {
+          entity: 'inventory',
+          entityId: line.tierId,
+          event: 'inventory.reserved',
+          fromState: 'available',
+          toState: 'reserved',
+          actor: 'system:checkout',
+          orderId: created!.id,
+          eventId: event.id,
+          detail: { quantity: line.quantity, tierName: line.tierName },
+        });
+      }
 
       return created!;
     });
@@ -240,12 +297,24 @@ export async function createCheckout(
     throw error;
   }
 
-  // Seats are held — the sale page should stop advertising them.
-  await invalidateEvent(event.id, event.slug);
-  await scheduleOrderExpiry(order.id, reservedUntil);
+  // Seats are held — the sale page should stop advertising them. A cache miss
+  // is harmless (the next read repopulates it), so this must never be the thing
+  // that fails a checkout.
+  await invalidateEvent(event.id, event.slug).catch((error: unknown) => {
+    logger.warn({ err: error, eventId: event.id }, 'could not invalidate event cache');
+  });
 
-  // ─── Authorise the payment (outside the transaction) ────────────────────
+  // ─── Everything past the commit must be covered by the release ───────────
+  //
+  // Inventory is held from here on. Anything that throws before the order
+  // reaches `awaiting_payment` has to give those seats back, which is why
+  // scheduling the expiry is *inside* this try rather than before it: a throw
+  // from `queue.add` would otherwise strand the seats permanently — held, with
+  // no expiry job to release them and no compensating path to run. That is
+  // exactly how a colon in a BullMQ job id took every checkout down.
   try {
+    await scheduleOrderExpiry(order.id, reservedUntil);
+
     const charge = await gateway.charge({
       orderId: order.id,
       reference: order.reference,
@@ -255,28 +324,59 @@ export async function createCheckout(
       description: `Tickets ${order.reference}`,
     });
 
-    const [payment] = await db
-      .insert(payments)
-      .values({
-        orderId: order.id,
-        gateway: gatewayName,
-        gatewayRef: charge.gatewayRef,
-        merchantRef: charge.merchantRef ?? null,
-        amountCents: order.totalCents,
-        currency: order.currency,
-        payerPhone: phone,
-        status: 'pending',
-        rawRequest: charge.raw,
-      })
-      .returning();
+    // One transaction, not two statements. A crash between the payment INSERT
+    // and the status UPDATE would otherwise leave a pending payment attached to
+    // a `pending` order — money in flight against an order that does not know
+    // it is being paid for.
+    const payment = await withTransaction(async (tx) => {
+      const [row] = await tx
+        .insert(payments)
+        .values({
+          orderId: order.id,
+          gateway: gatewayName,
+          gatewayRef: charge.gatewayRef,
+          merchantRef: charge.merchantRef ?? null,
+          amountCents: order.totalCents,
+          currency: order.currency,
+          payerPhone: phone,
+          status: 'pending',
+          rawRequest: charge.raw,
+        })
+        .returning();
 
-    await db
-      .update(orders)
-      .set({ status: 'awaiting_payment', updatedAt: new Date() })
-      .where(eq(orders.id, order.id));
+      await tx
+        .update(orders)
+        .set({ status: 'awaiting_payment', updatedAt: new Date() })
+        .where(eq(orders.id, order.id));
+
+      await recordTransition(tx, {
+        entity: 'payment',
+        entityId: row!.id,
+        event: 'payment.initiated',
+        fromState: null,
+        toState: 'pending',
+        actor: 'system:checkout',
+        orderId: order.id,
+        amountCents: order.totalCents,
+        detail: { gateway: gatewayName, gatewayRef: charge.gatewayRef },
+      });
+
+      await recordTransition(tx, {
+        entity: 'order',
+        entityId: order.id,
+        event: 'order.awaiting_payment',
+        fromState: 'pending',
+        toState: 'awaiting_payment',
+        actor: 'system:checkout',
+        orderId: order.id,
+        amountCents: order.totalCents,
+      });
+
+      return row!;
+    });
 
     // Chase this payment if Safaricom's callback never arrives.
-    await scheduleReconcile(payment!.id, 1);
+    await scheduleReconcile(payment.id, 1);
 
     return {
       orderId: order.id,
@@ -295,11 +395,12 @@ export async function createCheckout(
       idempotentReplay: false,
     };
   } catch (error) {
-    // The gateway refused or timed out. Give the seats back immediately rather
-    // than making the buyer wait out the full hold.
+    // The gateway refused or timed out, or the queue would not accept the job.
+    // Either way the seats go back immediately rather than making the buyer wait
+    // out the full hold.
     logger.error(
       { err: error, orderId: order.id, reference: order.reference },
-      'payment initiation failed — releasing held inventory',
+      'checkout failed after inventory was held — releasing it',
     );
 
     await releaseOrder(order.id, 'failed').catch((releaseError: unknown) => {
@@ -310,13 +411,18 @@ export async function createCheckout(
       );
     });
     await cancelOrderExpiry(order.id);
-    await invalidateEvent(event.id, event.slug);
+    await invalidateEvent(event.id, event.slug).catch(() => {});
 
     if (error instanceof AppError) throw error;
+
+    // A non-AppError here is ours, not Safaricom's — a queue rejection, a Redis
+    // outage. Saying "we could not reach M-Pesa" would send an operator to the
+    // wrong system, so the message stays about us while the log carries the
+    // detail.
     throw new AppError(
-      502,
-      'payment_initiation_failed',
-      'We could not reach M-Pesa. Please try again.',
+      503,
+      'checkout_failed',
+      'We could not start your payment. Please try again.',
       { retryable: true },
     );
   }
@@ -344,6 +450,157 @@ export async function cancelOrder(reference: string): Promise<{ status: string }
   await invalidateEvent(order.eventId);
 
   return { status: result.status };
+}
+
+// ---------------------------------------------------------------------------
+// Preview — confirm the buyer's details and the price before any money moves
+//
+// The point is to make the frontend's confirm screen show exactly what the
+// server will do, using the server's own normalisation. A buyer typing
+// `0712 345 678` should see `254712345678` before they commit, not discover it
+// on an M-Pesa prompt they did not expect.
+//
+// Nothing here mutates: no inventory is held, no gateway is called. Availability
+// is reported as of *now* and may change before checkout — that is inherent to a
+// flash sale, and is why `availableNow` is labelled rather than promised.
+// ---------------------------------------------------------------------------
+
+export interface CheckoutPreview {
+  event: { slug: string; name: string; currency: string; startsAt: Date };
+  buyer: BuyerInput;
+  items: Array<{
+    tierId: string;
+    tierName: string;
+    quantity: number;
+    unitPriceCents: number;
+    subtotalCents: number;
+    /** Seats left, or `null` when the tier has no capacity limit. */
+    availableNow: number | null;
+    uncapped: boolean;
+    soldOut: boolean;
+    sufficient: boolean;
+  }>;
+  subtotalCents: number;
+  feeCents: number;
+  totalCents: number;
+  currency: string;
+  /** Whole shillings that will be charged — what the STK prompt will show. */
+  mpesaAmount: number;
+  holdMinutes: number;
+  /** False when something would fail today; `issues` says what. */
+  chargeable: boolean;
+  issues: string[];
+}
+
+export async function previewCheckout(input: {
+  eventSlug: string;
+  items: CheckoutItemInput[];
+  buyer: BuyerInput;
+}): Promise<CheckoutPreview> {
+  const issues: string[] = [];
+
+  const seen = new Set<string>();
+  for (const item of input.items) {
+    if (seen.has(item.tierId)) {
+      throw badRequest(
+        'Each ticket tier may appear only once — combine them into a single quantity',
+      );
+    }
+    seen.add(item.tierId);
+  }
+
+  const event = await getEventRowBySlug(input.eventSlug);
+
+  if (event.status !== 'published') {
+    issues.push(`"${event.name}" is not currently on sale`);
+  }
+
+  const tiers = await db
+    .select()
+    .from(ticketTiers)
+    .where(
+      and(
+        eq(ticketTiers.eventId, event.id),
+        inArray(
+          ticketTiers.id,
+          input.items.map((item) => item.tierId),
+        ),
+      ),
+    );
+
+  const tierById = new Map(tiers.map((tier) => [tier.id, tier]));
+
+  const lines = input.items.map((item) => {
+    const tier = tierById.get(item.tierId);
+    if (!tier) {
+      throw badRequest(`Unknown ticket tier ${item.tierId} for "${event.name}"`);
+    }
+
+    const availableNow = availableSeats(tier);
+    const sufficient = hasRoomFor(tier, item.quantity);
+
+    if (!sufficient && availableNow !== null) {
+      issues.push(
+        availableNow <= 0
+          ? `"${tier.name}" is sold out`
+          : `Only ${availableNow} ticket(s) left for "${tier.name}"`,
+      );
+    }
+    if (tier.status === 'closed') {
+      issues.push(`"${tier.name}" is sold out`);
+    } else if (tier.status !== 'active') {
+      issues.push(`"${tier.name}" is not currently on sale`);
+    }
+    if (item.quantity < tier.minPerOrder || item.quantity > tier.maxPerOrder) {
+      issues.push(
+        `"${tier.name}" allows between ${tier.minPerOrder} and ${tier.maxPerOrder} tickets per order`,
+      );
+    }
+
+    return {
+      tierId: tier.id,
+      tierName: tier.name,
+      quantity: item.quantity,
+      unitPriceCents: tier.priceCents,
+      subtotalCents: tier.priceCents * item.quantity,
+      availableNow,
+      uncapped: availableNow === null,
+      soldOut: tier.status === 'closed' || (availableNow !== null && availableNow <= 0),
+      sufficient: sufficient && tier.status !== 'closed',
+    };
+  });
+
+  const subtotalCents = lines.reduce((sum, line) => sum + line.subtotalCents, 0);
+  const totalCents = subtotalCents;
+
+  // Surface the whole-shillings problem here rather than at charge time: M-Pesa
+  // cannot take 1250.50, and finding that out mid-checkout costs the seats.
+  let mpesaAmount = 0;
+  try {
+    mpesaAmount = centsToMpesaAmount(totalCents);
+  } catch (error) {
+    issues.push(error instanceof AppError ? error.message : 'Amount is not chargeable');
+  }
+
+  return {
+    event: {
+      slug: event.slug,
+      name: event.name,
+      currency: event.currency,
+      startsAt: event.startsAt,
+    },
+    // Echoed back post-normalisation so the client can show what will be stored.
+    buyer: input.buyer,
+    items: lines,
+    subtotalCents,
+    feeCents: 0,
+    totalCents,
+    currency: event.currency,
+    mpesaAmount,
+    holdMinutes: env.ORDER_HOLD_MINUTES,
+    chargeable: issues.length === 0,
+    issues,
+  };
 }
 
 // ---------------------------------------------------------------------------

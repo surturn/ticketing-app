@@ -5,11 +5,42 @@ import { orderItems, orders, ticketTiers } from '../db/schema.js';
 import type { OrderStatus, TicketTier } from '../db/schema.js';
 import { conflict, notFound } from '../lib/errors.js';
 import { logger } from '../lib/logger.js';
+import { recordTransition } from './ledger.service.js';
+
+/**
+ * Seats still sellable, or `null` when the tier is uncapped.
+ *
+ * The one place this subtraction happens. Doing it inline yields `NaN` the moment
+ * `quantityTotal` is NULL — and `NaN` compares false against everything, so a
+ * sold-out check would quietly start passing.
+ */
+export function availableSeats(tier: {
+  quantityTotal: number | null;
+  quantityReserved: number;
+  quantitySold: number;
+}): number | null {
+  if (tier.quantityTotal === null) return null;
+  return tier.quantityTotal - tier.quantityReserved - tier.quantitySold;
+}
+
+/** True when the tier can take `quantity` more. Uncapped tiers always can. */
+export function hasRoomFor(
+  tier: {
+    quantityTotal: number | null;
+    quantityReserved: number;
+    quantitySold: number;
+  },
+  quantity: number,
+): boolean {
+  const available = availableSeats(tier);
+  return available === null || available >= quantity;
+}
 
 // ---------------------------------------------------------------------------
 // Inventory is three counters on ticket_tiers:
 //
 //   available = quantity_total - quantity_reserved - quantity_sold
+//               (null when quantity_total is null — the tier is uncapped)
 //
 // A checkout moves available → reserved. Settlement moves reserved → sold.
 // An expiry or failure moves reserved → available.
@@ -60,7 +91,10 @@ export async function reserveTier(
         sql`(${ticketTiers.salesStartAt} IS NULL OR ${ticketTiers.salesStartAt} <= now())`,
         sql`(${ticketTiers.salesEndAt} IS NULL OR ${ticketTiers.salesEndAt} > now())`,
         // The oversell guard, evaluated inside the same statement that mutates.
-        sql`${ticketTiers.quantityTotal} - ${ticketTiers.quantityReserved} - ${ticketTiers.quantitySold} >= ${request.quantity}`,
+        // An uncapped tier (NULL total) always has room; without the explicit
+        // NULL branch the comparison yields NULL, the WHERE excludes the row,
+        // and an uncapped tier could never sell a single ticket.
+        sql`(${ticketTiers.quantityTotal} IS NULL OR ${ticketTiers.quantityTotal} - ${ticketTiers.quantityReserved} - ${ticketTiers.quantitySold} >= ${request.quantity})`,
       ),
     )
     .returning();
@@ -82,6 +116,15 @@ export async function explainReservationFailure(
 
   if (!tier) {
     throw notFound(`Ticket tier ${request.tierId} does not belong to this event`);
+  }
+
+  if (tier.status === 'closed') {
+    // The organiser closed this deliberately, so it is final rather than
+    // temporary — and for an uncapped tier it is the only way to be sold out.
+    throw conflict('insufficient_inventory', `"${tier.name}" is sold out`, {
+      details: { available: 0, requested: request.quantity, closedByOrganiser: true },
+      retryable: false,
+    });
   }
 
   if (tier.status !== 'active') {
@@ -108,7 +151,20 @@ export async function explainReservationFailure(
     );
   }
 
-  const available = tier.quantityTotal - tier.quantityReserved - tier.quantitySold;
+  const available = availableSeats(tier);
+
+  if (available === null) {
+    // An uncapped tier has room by definition, so reaching here means the
+    // reservation failed for a reason none of the checks above explains — a
+    // concurrent status change, most likely. Reporting "sold out" would send an
+    // organiser hunting for capacity that does not exist.
+    throw conflict(
+      'tier_unavailable',
+      `"${tier.name}" could not be reserved. Please try again.`,
+      { retryable: true },
+    );
+  }
+
   throw conflict(
     'insufficient_inventory',
     available <= 0
@@ -183,6 +239,33 @@ export async function releaseOrder(
       .set({ status: terminalStatus, releasedAt: new Date(), updatedAt: new Date() })
       .where(eq(orders.id, orderId));
 
+    await recordTransition(tx, {
+      entity: 'order',
+      entityId: orderId,
+      event: `order.${terminalStatus}`,
+      fromState: order.status,
+      toState: terminalStatus,
+      actor: 'system:release',
+      orderId,
+      eventId: order.eventId,
+      amountCents: order.totalCents,
+      detail: { seatsReturned: items.map((i) => ({ tierId: i.tierId, quantity: i.quantity })) },
+    });
+
+    for (const item of items) {
+      await recordTransition(tx, {
+        entity: 'inventory',
+        entityId: item.tierId,
+        event: 'inventory.released',
+        fromState: 'reserved',
+        toState: 'available',
+        actor: 'system:release',
+        orderId,
+        eventId: order.eventId,
+        detail: { quantity: item.quantity, reason: terminalStatus },
+      });
+    }
+
     return { released: true, status: terminalStatus };
   });
 }
@@ -243,7 +326,7 @@ export async function commitOrder(orderId: string): Promise<CommitResult> {
           .where(
             and(
               eq(ticketTiers.id, item.tierId),
-              sql`${ticketTiers.quantityTotal} - ${ticketTiers.quantityReserved} - ${ticketTiers.quantitySold} >= ${item.quantity}`,
+              sql`(${ticketTiers.quantityTotal} IS NULL OR ${ticketTiers.quantityTotal} - ${ticketTiers.quantityReserved} - ${ticketTiers.quantitySold} >= ${item.quantity})`,
             ),
           )
           .returning({ id: ticketTiers.id });
@@ -280,6 +363,33 @@ export async function commitOrder(orderId: string): Promise<CommitResult> {
           : (order.metadata ?? null),
       })
       .where(eq(orders.id, orderId));
+
+    await recordTransition(tx, {
+      entity: 'order',
+      entityId: orderId,
+      event: 'order.paid',
+      fromState: order.status,
+      toState: 'paid',
+      actor: 'system:settlement',
+      orderId,
+      eventId: order.eventId,
+      amountCents: order.totalCents,
+      detail: { holdLapsed, requiresRefund },
+    });
+
+    for (const item of items) {
+      await recordTransition(tx, {
+        entity: 'inventory',
+        entityId: item.tierId,
+        event: 'inventory.sold',
+        fromState: holdLapsed ? 'available' : 'reserved',
+        toState: 'sold',
+        actor: 'system:settlement',
+        orderId,
+        eventId: order.eventId,
+        detail: { quantity: item.quantity, recoveredAfterLapse: holdLapsed },
+      });
+    }
 
     return { committed: true, alreadyPaid: false, requiresRefund };
   });

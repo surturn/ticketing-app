@@ -19,6 +19,7 @@ export const cacheKeys = {
   eventTiers: (eventId: string) => `event:${eventId}:tiers`,
   eventAvailability: (eventId: string) => `event:${eventId}:availability`,
   publicEventList: () => 'events:published',
+  pastEventList: () => 'events:past',
 } as const;
 
 export async function cacheGet<T>(key: string): Promise<T | null> {
@@ -120,6 +121,8 @@ export async function invalidateEvent(
     cacheKeys.eventTiers(eventId),
     cacheKeys.eventAvailability(eventId),
     cacheKeys.publicEventList(),
+    // Archiving moves an event between the two lists, so both are stale.
+    cacheKeys.pastEventList(),
   ];
   if (slug) keys.push(cacheKeys.eventBySlug(slug));
   await cacheDelete(...keys);

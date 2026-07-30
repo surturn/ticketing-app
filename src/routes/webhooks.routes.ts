@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { MPESA_WEBHOOK_PATH } from '../config/env.js';
 import { isValidCallbackToken, mpesaGateway } from '../gateways/mpesa/gateway.js';
 import { applySettlement, recordWebhookDelivery } from '../services/payments.service.js';
 
@@ -20,7 +21,9 @@ const ACK = { ResultCode: 0, ResultDesc: 'Accepted' };
 
 export async function webhookRoutes(app: FastifyInstance): Promise<void> {
   app.post(
-    '/api/webhooks/mpesa',
+    // Shared with the MPESA_CALLBACK_URL validation in config/env.ts, so a
+    // misconfigured callback URL fails at boot instead of at the first payment.
+    MPESA_WEBHOOK_PATH,
     {
       config: {
         // Safaricom bursts retries; rate-limiting them would cause more retries.

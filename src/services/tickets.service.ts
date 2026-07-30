@@ -9,6 +9,7 @@ import {
 import { buildQrPayload, generateTicketCode, parseQrPayload } from '../lib/codes.js';
 import { badRequest, conflict, notFound } from '../lib/errors.js';
 import { logger } from '../lib/logger.js';
+import { recordTransition } from './ledger.service.js';
 
 // ---------------------------------------------------------------------------
 // Issuance
@@ -103,6 +104,20 @@ export async function issueTicketsForOrder(
         target: [tickets.orderItemId, tickets.sequence],
       })
       .returning();
+
+    for (const ticket of inserted) {
+      await recordTransition(tx, {
+        entity: 'ticket',
+        entityId: ticket.id,
+        event: 'ticket.issued',
+        fromState: null,
+        toState: 'issued',
+        actor: 'system:issuance',
+        orderId: order.id,
+        eventId: order.eventId,
+        detail: { code: ticket.code, tierId: ticket.tierId, sequence: ticket.sequence },
+      });
+    }
 
     return [...existing, ...inserted];
   });
@@ -224,6 +239,18 @@ export async function checkInTicket(
       })
       .where(and(eq(tickets.id, ticket.id), eq(tickets.status, 'issued')));
 
+    await recordTransition(tx, {
+      entity: 'ticket',
+      entityId: ticket.id,
+      event: 'ticket.checked_in',
+      fromState: 'issued',
+      toState: 'checked_in',
+      actor: options.scannedBy ? `scanner:${options.scannedBy}` : 'scanner:unknown',
+      orderId: ticket.orderId,
+      eventId: ticket.eventId,
+      detail: { code: ticket.code, checkedInAt: checkedInAt.toISOString() },
+    });
+
     return {
       admitted: true,
       ticket: {
@@ -236,13 +263,35 @@ export async function checkInTicket(
   });
 }
 
-export async function voidTicket(code: string, reason?: string): Promise<void> {
-  const result = await db
-    .update(tickets)
-    .set({ status: 'void', updatedAt: new Date() })
-    .where(eq(tickets.code, code))
-    .returning({ id: tickets.id });
+export async function voidTicket(
+  code: string,
+  reason?: string,
+  actor = 'admin',
+): Promise<void> {
+  await withTransaction(async (tx) => {
+    const result = await tx
+      .update(tickets)
+      .set({ status: 'void', updatedAt: new Date() })
+      .where(eq(tickets.code, code))
+      .returning();
 
-  if (result.length === 0) throw notFound(`No ticket matches code ${code}`);
-  logger.info({ code, reason }, 'ticket voided');
+    const voided = result[0];
+    if (!voided) throw notFound(`No ticket matches code ${code}`);
+
+    // Voiding is the one destructive act an admin can perform on a sold ticket,
+    // so it is exactly what the ledger exists to record.
+    await recordTransition(tx, {
+      entity: 'ticket',
+      entityId: voided.id,
+      event: 'ticket.voided',
+      fromState: 'issued',
+      toState: 'void',
+      actor,
+      orderId: voided.orderId,
+      eventId: voided.eventId,
+      detail: { code, reason: reason ?? null },
+    });
+  });
+
+  logger.info({ code, reason, actor }, 'ticket voided');
 }

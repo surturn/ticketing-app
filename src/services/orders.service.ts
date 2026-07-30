@@ -18,7 +18,7 @@ export interface OrderView {
   reference: string;
   status: Order['status'];
   event: { slug: string; name: string; startsAt: Date; venue: string | null };
-  buyer: { name: string; email: string | null; phone: string };
+  buyer: { name: string; email: string; phone: string };
   items: Array<{
     tierName: string;
     quantity: number;
