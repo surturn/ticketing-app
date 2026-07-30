@@ -1,0 +1,3 @@
+ALTER TABLE "ticket_tiers" DROP CONSTRAINT "ticket_tiers_no_oversell";--> statement-breakpoint
+ALTER TABLE "ticket_tiers" ALTER COLUMN "quantity_total" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "ticket_tiers" ADD CONSTRAINT "ticket_tiers_no_oversell" CHECK ("ticket_tiers"."quantity_total" IS NULL OR "ticket_tiers"."quantity_reserved" + "ticket_tiers"."quantity_sold" <= "ticket_tiers"."quantity_total");

@@ -1,0 +1,1 @@
+ALTER TYPE "public"."tier_status" ADD VALUE 'closed';

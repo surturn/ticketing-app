@@ -33,8 +33,8 @@ const client = postgres(env.DATABASE_URL, {
   connection: usingTransactionPooler
     ? {}
     : {
-        statement_timeout: String(env.DATABASE_STATEMENT_TIMEOUT_MS),
-        lock_timeout: String(env.DATABASE_LOCK_TIMEOUT_MS),
+        statement_timeout: env.DATABASE_STATEMENT_TIMEOUT_MS,
+        lock_timeout: env.DATABASE_LOCK_TIMEOUT_MS,
       },
 
   onnotice: (notice) => logger.debug({ notice }, 'postgres notice'),

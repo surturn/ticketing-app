@@ -1,0 +1,55 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1785397275330,
+      "tag": "0000_strong_lady_deathstrike",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1785397287029,
+      "tag": "0001_ledger_append_only",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785401918753,
+      "tag": "0002_chilly_storm",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1785402349938,
+      "tag": "0003_absent_nuke",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1785403614925,
+      "tag": "0004_calm_clint_barton",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1785410947980,
+      "tag": "0005_lush_whirlwind",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1785412349244,
+      "tag": "0006_clammy_lilandra",
+      "breakpoints": true
+    }
+  ]
+}
