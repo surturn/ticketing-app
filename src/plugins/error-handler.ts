@@ -2,6 +2,7 @@ import type { FastifyError, FastifyInstance } from 'fastify';
 import { ZodError } from 'zod';
 import { AppError, isRetryablePgError } from '../lib/errors.js';
 import { isProduction } from '../config/env.js';
+import { sendStorefrontIndex, storefrontEnabled } from './storefront.js';
 
 // ---------------------------------------------------------------------------
 // One error shape for the whole API:
@@ -96,7 +97,21 @@ export function registerErrorHandler(app: FastifyInstance): void {
   });
 
   app.setNotFoundHandler((request, reply) => {
-    reply.status(404).send({
+    // An unmatched GET that is not an API call is a client-side route — the
+    // buyer following a deep link to their order. Hand it the storefront and let
+    // the front end resolve it.
+    //
+    // Scoped tightly on purpose. Anything under /api/ keeps answering with the
+    // JSON envelope below even when it does not exist, because a client parsing
+    // a 404 must not be handed a page instead; and a non-GET is never a
+    // navigation, so a mistyped POST stays an honest 404 rather than a 200 with
+    // HTML in it.
+    const isNavigation = request.method === 'GET' || request.method === 'HEAD';
+    if (isNavigation && !request.url.startsWith('/api/') && storefrontEnabled()) {
+      return sendStorefrontIndex(request, reply);
+    }
+
+    return reply.status(404).send({
       error: {
         code: 'route_not_found',
         message: `No route for ${request.method} ${request.url}`,

@@ -6,6 +6,7 @@ import { env, isProduction } from './config/env.js';
 import { logger } from './lib/logger.js';
 import { cacheRedis } from './lib/redis.js';
 import { registerErrorHandler } from './plugins/error-handler.js';
+import { registerStorefront } from './plugins/storefront.js';
 import { registerRoutes } from './routes/index.js';
 
 export async function buildServer(): Promise<FastifyInstance> {
@@ -43,6 +44,10 @@ export async function buildServer(): Promise<FastifyInstance> {
     skipOnError: true,
     keyGenerator: (request) => request.ip,
   });
+
+  // Before the error handler, which needs the reply decorator this adds in order
+  // to serve the storefront as the not-found fallback.
+  await registerStorefront(app);
 
   registerErrorHandler(app);
   await registerRoutes(app);
