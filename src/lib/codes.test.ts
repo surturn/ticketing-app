@@ -42,9 +42,27 @@ describe('QR signing', () => {
     expect(parseQrPayload(`${code}.aaaaaaaaaaaaaaaaaaaaaaaaaaa`)).toBeNull();
   });
 
+  it('rejects a bare code on the scan path', () => {
+    // The regression that matters. An unsigned payload used to be returned as
+    // valid, which meant the signature check was skipped by anyone who simply
+    // did not supply a signature.
+    const code = generateTicketCode();
+    expect(parseQrPayload(code)).toBeNull();
+    expect(parseQrPayload(code, { allowUnsigned: false })).toBeNull();
+  });
+
   it('accepts a bare code typed in manually at the gate', () => {
     const code = generateTicketCode();
-    expect(parseQrPayload(code)).toBe(code);
+    expect(parseQrPayload(code, { allowUnsigned: true })).toBe(code);
+  });
+
+  it('still verifies a signature that is present, even on the manual path', () => {
+    // `allowUnsigned` permits an absent signature; it does not excuse a wrong
+    // one. Otherwise a forged payload would pass by claiming to be typed.
+    const code = generateTicketCode();
+    expect(
+      parseQrPayload(`${code}.aaaaaaaaaaaaaaaaaaaaaaaaaaa`, { allowUnsigned: true }),
+    ).toBeNull();
   });
 
   it('rejects empty input', () => {

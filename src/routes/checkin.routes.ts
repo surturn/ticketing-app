@@ -17,6 +17,16 @@ const checkInBody = z
     // Lands in tickets.checked_in_by and in the ledger's actor field, so it is
     // bounded and cleaned rather than taken as given.
     gate: boundedText(1, 60).optional(),
+
+    /**
+     * How the code was obtained.
+     *
+     * Defaults to `scan`, which requires a valid signature. A client must ask
+     * for `manual` deliberately to have a bare typed code accepted — the
+     * signature is only a control if declining it is a decision somebody makes
+     * rather than a side effect of leaving a field out.
+     */
+    entry: z.enum(['scan', 'manual']).default('scan'),
   })
   .strict();
 
@@ -34,6 +44,7 @@ export async function checkInRoutes(app: FastifyInstance): Promise<void> {
         // A scanner token is scoped to one event; an admin key is not.
         eventId: request.scanner?.eventId,
         scannedBy: body.gate ?? request.scanner?.gate ?? 'admin',
+        entry: body.entry,
       });
 
       // 200 either way — "already checked in" is information the gate needs,

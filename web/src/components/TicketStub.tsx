@@ -104,20 +104,34 @@ export function TicketStub({
         {/* Stub: the part that gets scanned. */}
         <div className="flex items-center gap-4 p-5">
           <div
-            className={`rounded-xl bg-white p-2 transition ${
+            className={`grid h-[112px] w-[112px] place-items-center rounded-xl bg-white p-2 transition ${
               used || voided ? 'opacity-40 grayscale' : ''
             }`}
           >
-            {/* Encodes `code.signature` exactly as the gate expects. Rendered as
-                SVG so it stays sharp on any screen and when zoomed — a scanner
-                reading a blurry raster code is a queue at the door. */}
-            <QRCodeSVG
-              value={ticket.qr}
-              size={96}
-              level="M"
-              marginSize={0}
-              aria-label={`QR code for ticket ${ticket.code}`}
-            />
+            {ticket.qr ? (
+              /* Encodes `code.signature` exactly as the gate expects. Rendered as
+                 SVG so it stays sharp on any screen and when zoomed — a scanner
+                 reading a blurry raster code is a queue at the door. */
+              <QRCodeSVG
+                value={ticket.qr}
+                size={96}
+                level="M"
+                marginSize={0}
+                aria-label={`QR code for ticket ${ticket.code ?? ''}`}
+              />
+            ) : (
+              /* Withheld, not missing. The order resolves for anyone holding the
+                 reference — which is how a guest sees what they bought — but the
+                 scannable part belongs to the account that owns it. Occupying the
+                 same footprint keeps the stub from reflowing when it appears. */
+              <div
+                className="px-2 text-center md-body-small text-neutral-500"
+                role="img"
+                aria-label="QR code hidden until you sign in"
+              >
+                Hidden
+              </div>
+            )}
           </div>
 
           <div className="min-w-0">
@@ -125,14 +139,16 @@ export function TicketStub({
             {/* Tabular figures and generous tracking: this gets read aloud and
                 typed in by hand when a scanner fails. */}
             <p className="md-data-medium mt-0.5 tracking-wider text-on-surface">
-              {ticket.code}
+              {ticket.code ?? '••••-••••-••••'}
             </p>
             <p className="md-body-small mt-2 text-on-surface-variant">
               {used
                 ? 'Already scanned at the gate'
                 : voided
                   ? 'This ticket was cancelled'
-                  : 'Show this at the door'}
+                  : ticket.qr
+                    ? 'Show this at the door'
+                    : 'Sign in with the email you bought with to show this at the door'}
             </p>
           </div>
         </div>

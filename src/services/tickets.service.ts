@@ -181,11 +181,27 @@ export interface CheckInResult {
 
 export async function checkInTicket(
   qrOrCode: string,
-  options: { eventId?: string; scannedBy?: string } = {},
+  options: {
+    eventId?: string;
+    scannedBy?: string;
+    /**
+     * How the code reached us. A scan must carry a valid signature; a code
+     * typed by gate staff is accepted on their authority instead, and the
+     * distinction is recorded because "admitted without a verified badge" is
+     * exactly what someone reconstructing a disputed entry needs to see.
+     */
+    entry?: 'scan' | 'manual';
+  } = {},
 ): Promise<CheckInResult> {
-  const code = parseQrPayload(qrOrCode);
+  const entry = options.entry ?? 'scan';
+
+  const code = parseQrPayload(qrOrCode, { allowUnsigned: entry === 'manual' });
   if (!code) {
-    throw badRequest('That QR code is not valid for this event');
+    throw badRequest(
+      entry === 'manual'
+        ? 'That ticket code is not valid for this event'
+        : 'That QR code is not valid for this event',
+    );
   }
 
   return withTransaction(async (tx) => {
@@ -274,7 +290,15 @@ export async function checkInTicket(
       actor: options.scannedBy ? `scanner:${options.scannedBy}` : 'scanner:unknown',
       orderId: ticket.orderId,
       eventId: ticket.eventId,
-      detail: { code: ticket.code, checkedInAt: checkedInAt.toISOString() },
+      detail: {
+        code: ticket.code,
+        checkedInAt: checkedInAt.toISOString(),
+        // A manual entry was admitted without a verified signature. That is
+        // legitimate and sometimes necessary, and it is also the first thing
+        // worth looking at if an admission is ever questioned.
+        entry,
+        signatureVerified: entry === 'scan',
+      },
     });
 
     return {

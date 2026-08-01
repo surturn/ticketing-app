@@ -51,18 +51,44 @@ export function buildQrPayload(code: string): string {
   return `${code}.${sign(code)}`;
 }
 
+export interface ParseQrOptions {
+  /**
+   * Accept a bare code carrying no signature.
+   *
+   * Only for a code a human typed at the gate when a scanner would not read the
+   * badge. Never for a scanned payload: a scanner that produced no signature
+   * produced something that did not come from us.
+   */
+  allowUnsigned?: boolean;
+}
+
 /**
- * Accepts either a signed QR payload or a bare code typed in manually at the
- * gate. Returns the code when the signature is valid (or absent), else null.
+ * Turns a scanned payload — or a manually typed code — into a ticket code.
+ *
+ * The signature is only a control if it cannot be declined. This used to return
+ * the bare code whenever the payload contained no `.`, which meant an attacker
+ * skipped verification by simply not supplying a signature: the check was
+ * present, thorough, constant-time, and entirely optional. What actually kept
+ * forged tickets out was the size of the code space, not the HMAC — and a
+ * comment claiming otherwise is worse than no comment, because the next person
+ * to shorten a code will read it and believe they are still covered.
+ *
+ * So the two ways a code arrives are now told apart by the caller rather than
+ * inferred from the punctuation. A scan must verify. A typed code is accepted
+ * on the operator's authority, which is a real and different thing, and is
+ * recorded as such.
  */
-export function parseQrPayload(payload: string): string | null {
+export function parseQrPayload(
+  payload: string,
+  options: ParseQrOptions = {},
+): string | null {
   const trimmed = String(payload ?? '').trim().toUpperCase();
   if (!trimmed) return null;
 
   const separator = trimmed.lastIndexOf('.');
   if (separator === -1) {
-    // Bare code — no signature to check. The database still validates it.
-    return trimmed;
+    // No signature present. Whether that is acceptable is the caller's to say.
+    return options.allowUnsigned ? trimmed : null;
   }
 
   const code = trimmed.slice(0, separator);
