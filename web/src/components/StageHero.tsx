@@ -105,6 +105,29 @@ function Ticker({ events }: { events: EventSummary[] }) {
     return names.length > 0 ? names : ['TICKETS ON SALE NOW'];
   }, [events]);
 
+  /**
+   * How many copies of the list to lay end to end.
+   *
+   * The loop works by translating the strip left by half its own width and
+   * starting over, which is seamless only while the strip is at least twice the
+   * viewport wide. Two events make a short line, so two copies of it do not
+   * span the screen and the strip visibly empties before it snaps back.
+   *
+   * Estimating from the character count rather than measuring: a measured
+   * version needs a layout read on mount and a resize observer to stay correct,
+   * and this only has to be generous, not exact. Over-repeating costs a few
+   * spans of text.
+   */
+  const copies = useMemo(() => {
+    const characters = line.join('').length + line.length * 6;
+    // ~11px per character at this size and tracking, against the widest phone
+    // and desktop we care about. Doubled so the -50% translation always has a
+    // full screen of content behind it, then clamped to something sane.
+    const estimatedWidth = characters * 11;
+    const needed = Math.ceil(2400 / Math.max(estimatedWidth, 1)) * 2;
+    return Math.min(Math.max(needed, 2), 12);
+  }, [line]);
+
   const Run = ({ hidden }: { hidden?: boolean }) => (
     <span
       className="flex shrink-0 items-center gap-8 pr-8"
@@ -128,9 +151,13 @@ function Ticker({ events }: { events: EventSummary[] }) {
 
   return (
     <div className="relative flex overflow-hidden border-y border-outline-variant/70 py-2.5">
+      {/* An even number of copies, half of which the -50% translation consumes.
+          Only the first is announced; the rest are the same names again and
+          would otherwise be read out repeatedly. */}
       <div className="ticker flex">
-        <Run />
-        <Run hidden />
+        {Array.from({ length: copies }).map((_, index) => (
+          <Run key={index} hidden={index > 0} />
+        ))}
       </div>
 
       {/* Faded ends, so the text arrives and leaves rather than being cut off

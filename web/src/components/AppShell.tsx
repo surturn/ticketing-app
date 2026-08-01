@@ -155,7 +155,14 @@ export function AppShell({ children }: { children: ReactNode }) {
 
             {/* The wordmark already goes home, so this is redundant on a phone
                 and was costing width the account controls needed. */}
-            <NavLink to="/" end className={`${navClass({ isActive: false })} hidden sm:inline-flex`}>
+            {/* The active class has to come from the render prop, not from a
+                hardcoded `isActive: false` — passing the flag by hand meant
+                this link could never light up, whatever page you were on. */}
+            <NavLink
+              to="/"
+              end
+              className={({ isActive }) => `${navClass({ isActive })} hidden sm:inline-flex`}
+            >
               Events
             </NavLink>
 
@@ -254,6 +261,21 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Mark label="Pay with M-Pesa" />
             <Mark label="Encrypted checkout" />
             <Mark label="Scanned at the gate" />
+
+            {/* Required reading, so it sits in the trust row rather than in a
+                column someone has to go looking for. */}
+            <Link
+              to="/privacy"
+              className="md-body-small text-on-surface-variant transition-colors hover:text-on-surface"
+            >
+              Privacy
+            </Link>
+            <Link
+              to="/terms"
+              className="md-body-small text-on-surface-variant transition-colors hover:text-on-surface"
+            >
+              Terms
+            </Link>
 
             <p className="md-body-small ml-auto text-on-surface-variant">
               © {new Date().getFullYear()} Eventify Tickets
