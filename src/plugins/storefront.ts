@@ -113,6 +113,36 @@ export async function registerStorefront(app: FastifyInstance): Promise<boolean>
 
   app.get('/', sendStorefrontIndex);
 
+  /**
+   * The icon, for pages that cannot carry it inline.
+   *
+   * `index.html` declares the favicon as a data URI precisely so there is
+   * nothing to request — but that only covers documents we author. The proxied
+   * Firebase auth pages are Google's markup with no icon link of ours in them,
+   * so the browser falls back to `/favicon.ico` and gets a 404 in the middle of
+   * the sign-in flow. Harmless, and it sat in the console next to the errors
+   * that were not, which is its own cost when someone is debugging sign-in.
+   *
+   * The same mark as the inline one, served as SVG. Browsers have accepted an
+   * SVG at this path for years, and the alternative is committing a binary.
+   */
+  const FAVICON =
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">` +
+    `<mask id="n"><rect width="32" height="32" fill="white"/>` +
+    `<circle cx="0" cy="16" r="5" fill="black"/>` +
+    `<circle cx="32" cy="16" r="5" fill="black"/></mask>` +
+    `<rect width="32" height="32" rx="9" fill="#0B5FD9" mask="url(#n)"/>` +
+    `<circle cx="16" cy="11" r="1.6" fill="#001B3E"/>` +
+    `<circle cx="16" cy="16" r="1.6" fill="#001B3E"/>` +
+    `<circle cx="16" cy="21" r="1.6" fill="#001B3E"/></svg>`;
+
+  app.get('/favicon.ico', async (_request, reply) =>
+    reply
+      .type('image/svg+xml')
+      .header('cache-control', 'public, max-age=604800')
+      .send(FAVICON),
+  );
+
   enabled = true;
   logger.info({ root: STOREFRONT_ROOT }, 'serving the storefront');
   return true;
