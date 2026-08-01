@@ -303,6 +303,19 @@
 @layer base {
   html {
     background-color: var(--md-surface);
+    /* The page never scrolls sideways.
+
+       Wide content — a table, a poster rail, a code block — scrolls inside its
+       own container, never by widening the document. Without this, one
+       over-wide decoration anywhere on the page makes every screen draggable
+       horizontally, which on a phone reads as broken and fights the back-swipe.
+
+       `clip`, emphatically not `hidden`. `overflow-x: hidden` here would make
+       the viewport a scroll container, and `position: sticky` resolves against
+       its nearest scrolling ancestor — the app bar and the order summary would
+       both silently stop sticking. `clip` suppresses the scroll without
+       creating that container, so sticky keeps working. */
+    overflow-x: clip;
   }
 
   body {
@@ -311,6 +324,9 @@
     color: var(--md-on-surface);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
+    /* Belt and braces: an element positioned past the right edge can still
+       extend the body's scroll width even when `html` clips. */
+    overflow-x: clip;
   }
 
   :focus-visible {
@@ -617,9 +633,18 @@
    Deliberate rather than decorative, which is why it fires once and never
    loops.
    --------------------------------------------------------------------------- */
+/* Contained by construction: it never exceeds its parent's box, so it needs no
+   clipping ancestor and cannot widen the document.
+
+   The first version used `inset: -20%` and scaled to 1.15. On a phone that put
+   roughly seventy pixels of glow past each edge of a full-width parent, which
+   the page then had to be scrollable sideways to reach — a decoration deciding
+   the width of the document. Clipping at the parent would have fixed the scroll
+   but also cut the tickets' entrance animation, so the animation is bounded
+   instead: it grows *into* its box and fades there, never past it. */
 @utility gold-glow {
   position: absolute;
-  inset: -20%;
+  inset: 0;
   pointer-events: none;
   border-radius: 9999px;
   background: radial-gradient(
@@ -638,10 +663,12 @@
   }
   45% {
     opacity: 1;
+    transform: scale(0.92);
   }
+  /* Stops at 1, never past it. The fade does the work the overshoot used to. */
   100% {
     opacity: 0;
-    transform: scale(1.15);
+    transform: scale(1);
   }
 }
 
