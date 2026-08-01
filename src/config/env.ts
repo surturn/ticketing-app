@@ -186,7 +186,17 @@ const schema = z.object({
       // Safaricom will not post to plain HTTP, and will not reach localhost.
       return url.protocol === 'https:';
     }, 'must be https — Safaricom will not post to a plain HTTP callback'),
-  MPESA_CALLBACK_TOKEN: z.string().optional(),
+  /**
+   * The shared secret on the callback URL's query string.
+   *
+   * The only thing standing between an attacker and a forged settlement, so it
+   * carries the same length floor as every other credential here rather than
+   * being the one secret with none. Still `.optional()`, because a deployment
+   * with no M-Pesa credentials at all has nothing to authenticate — but
+   * `mpesaConfigured` now requires it, so a service that can take money cannot
+   * boot without one.
+   */
+  MPESA_CALLBACK_TOKEN: z.string().min(32, 'must be at least 32 characters').optional(),
 
   // ─── M-Pesa B2C and Reversal ─────────────────────────────────────
   //
@@ -389,6 +399,32 @@ export type Env = typeof env;
 export const isProduction = env.NODE_ENV === 'production';
 export const isTest = env.NODE_ENV === 'test';
 
+/**
+ * Live M-Pesa credentials require production security settings.
+ *
+ * `isProduction` is not a label — it is the switch for HSTS, the CSP's
+ * `upgrade-insecure-requests`, the CORS allowlist, and the suppression of
+ * internal error messages on a 5xx. A deployment charging real cards with
+ * `NODE_ENV=development` has all four off and looks entirely healthy: nothing
+ * throws, nothing is logged, and the only symptom is that every one of those
+ * defences silently does nothing.
+ *
+ * That combination was live in `.env.production` — `MPESA_ENVIRONMENT=production`
+ * on line 46, `NODE_ENV=development` on line 6 — so this is not a hypothetical
+ * being guarded against. Setting the variable correctly fixes it once; this
+ * check is what stops it coming back, and is the reason a future `isProduction`
+ * guard can be trusted to actually run.
+ */
+if (env.MPESA_ENVIRONMENT === 'production' && !isProduction) {
+  throw new Error(
+    `MPESA_ENVIRONMENT=production with NODE_ENV=${env.NODE_ENV}.\n` +
+      '  Live M-Pesa credentials are configured, but the security settings that key\n' +
+      '  off NODE_ENV=production are switched off: HSTS, upgrade-insecure-requests,\n' +
+      '  the CORS allowlist, and 5xx message suppression.\n' +
+      '  Set NODE_ENV=production, or point MPESA_ENVIRONMENT at the sandbox.',
+  );
+}
+
 /** True when buyer accounts are available. */
 export const firebaseConfigured = Boolean(
   env.FIREBASE_PROJECT_ID && env.FIREBASE_CLIENT_EMAIL && env.FIREBASE_PRIVATE_KEY,
@@ -409,12 +445,22 @@ export const r2Configured = Boolean(
     env.R2_PUBLIC_BASE_URL,
 );
 
-/** True when live M-Pesa credentials are present. */
+/**
+ * True when live M-Pesa credentials are present.
+ *
+ * `MPESA_CALLBACK_TOKEN` is part of this deliberately. Charging a buyer and
+ * being able to tell a real settlement from a forged one are not separable
+ * capabilities: without the token the callback endpoint authenticates nobody,
+ * and anyone who can read a `gatewayRef` — which the checkout response returns
+ * to the buyer — can post a success for it and be issued tickets for free.
+ * Requiring it here means that state cannot be reached by omitting a variable.
+ */
 export const mpesaConfigured = Boolean(
   env.MPESA_CONSUMER_KEY &&
     env.MPESA_CONSUMER_SECRET &&
     env.MPESA_PASSKEY &&
-    env.MPESA_CALLBACK_URL,
+    env.MPESA_CALLBACK_URL &&
+    env.MPESA_CALLBACK_TOKEN,
 );
 
 /**
