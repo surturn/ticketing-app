@@ -1,0 +1,28 @@
+# Normalise to LF in the repository, and check out LF everywhere.
+#
+# Without this, a Windows clone with core.autocrlf=true gets CRLF in the working
+# tree. For most files that is merely untidy. For the migration SQL it is a
+# functional bug: Drizzle identifies an applied migration by hashing the file's
+# contents, so the same migration hashes differently on Windows than it does in
+# the Linux container that first applied it. `npm run db:migrate` then believes
+# migration 0000 has never run, tries to recreate the enums, and aborts with
+# "type event_status already exists" against a database that is perfectly fine.
+#
+# The container is unaffected either way, which is what makes this easy to miss:
+# it fails only for whoever runs migrations from a Windows checkout.
+* text=auto eol=lf
+
+# Explicit for the files where the hash is load-bearing.
+*.sql text eol=lf
+drizzle/**/*.json text eol=lf
+
+# Binaries must never be touched.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.cer binary
+*.pem binary
