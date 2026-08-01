@@ -54,6 +54,44 @@ const STRIP_RESPONSE = new Set([
 ]);
 
 /**
+ * The policy for the proxied Firebase pages, replacing the site-wide one.
+ *
+ * The site policy forbids inline script, which is right for our own pages and
+ * fatal here: Firebase's OAuth handler is a Google-authored document built
+ * around inline `<script>` blocks, and serving it from our origin put it under
+ * our policy. Every inline block was blocked, and sign-in failed with nothing
+ * but CSP violations in the console — the page loaded, and then did nothing.
+ *
+ * Hashing is not an option. The handler's markup is Google's to change without
+ * telling us, so a hash list would be correct until the day it silently was
+ * not. A nonce would mean rewriting the upstream HTML in flight, which is a
+ * parser in the sign-in path.
+ *
+ * So `'unsafe-inline'` is allowed, and confined to these paths. What that
+ * actually widens is narrow: these documents contain no data of ours, render
+ * nothing a user typed here, and take no input from our application — the only
+ * script that could run is script Google served. The site-wide policy over
+ * every page that *does* handle our data is untouched.
+ *
+ * `frame-ancestors 'self'` rather than `'none'`, because `/__/auth/iframe` is
+ * loaded in a frame by our own page as part of the sign-in flow. The site-wide
+ * `'none'` would block it.
+ */
+const AUTH_HANDLER_CSP = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' https://www.gstatic.com https://apis.google.com",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: https:",
+  "font-src 'self' data:",
+  "connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com",
+  // The dance ends by handing the browser back to the identity provider.
+  "form-action 'self' https://accounts.google.com",
+  "frame-ancestors 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+].join('; ');
+
+/**
  * Puts the parsed body back on the wire in the shape it arrived in.
  *
  * Fastify has already parsed and discarded the raw bytes by the time a handler
@@ -117,6 +155,20 @@ export function registerFirebaseAuthProxy(app: FastifyInstance): boolean {
       // `set-cookie` can legitimately repeat; `append` keeps every one.
       reply.header(key, value);
     });
+
+    /**
+     * Set last, so it wins.
+     *
+     * Helmet installs the site-wide policy ahead of this handler, and that
+     * policy is the one that breaks these pages. Overwriting it here — after
+     * the upstream's own headers have been copied — is what makes the
+     * route-specific policy the one the browser actually applies.
+     *
+     * Helmet's `X-Frame-Options: SAMEORIGIN` is left alone: it says the same
+     * thing as `frame-ancestors 'self'` below, so the two agree and the sign-in
+     * iframe loads under either.
+     */
+    reply.header('content-security-policy', AUTH_HANDLER_CSP);
 
     const body = Buffer.from(await upstreamResponse.arrayBuffer());
     return reply.status(upstreamResponse.status).send(body);
