@@ -7,6 +7,7 @@ import { cacheKeys, cacheDelete } from '../../lib/cache.js';
 import { logger } from '../../lib/logger.js';
 import { createQueueClient } from '../../lib/redis.js';
 import { archivePastEvents } from '../../services/events.service.js';
+import { purgeAbandonedOrders } from '../../services/purge.service.js';
 import { recordStandaloneTransition } from '../../services/ledger.service.js';
 import { getAnnouncementRecipients } from '../../services/subscribers.service.js';
 import {
@@ -15,6 +16,7 @@ import {
   QUEUE,
   type AnnounceEventJob,
   type ArchivePastEventsJob,
+  type PurgeAbandonedOrdersJob,
 } from '../queues.js';
 
 // ---------------------------------------------------------------------------
@@ -104,13 +106,19 @@ async function announce(eventId: string): Promise<number> {
 }
 
 export function createMaintenanceWorker(): Worker<
-  ArchivePastEventsJob | AnnounceEventJob
+  ArchivePastEventsJob | AnnounceEventJob | PurgeAbandonedOrdersJob
 > {
-  return new Worker<ArchivePastEventsJob | AnnounceEventJob>(
+  return new Worker<ArchivePastEventsJob | AnnounceEventJob | PurgeAbandonedOrdersJob>(
     QUEUE.MAINTENANCE,
-    async (job: Job<ArchivePastEventsJob | AnnounceEventJob>) => {
+    async (job: Job<ArchivePastEventsJob | AnnounceEventJob | PurgeAbandonedOrdersJob>) => {
       if (job.name === JOB.ANNOUNCE_EVENT) {
         return announce((job.data as AnnounceEventJob).eventId);
+      }
+      if (job.name === JOB.PURGE_ABANDONED_ORDERS) {
+        const { purged } = await purgeAbandonedOrders(
+          (job.data as PurgeAbandonedOrdersJob).afterDays ?? env.ORDER_PURGE_AFTER_DAYS,
+        );
+        return purged;
       }
       if (job.name !== JOB.ARCHIVE_PAST_EVENTS) return null;
       return archive(

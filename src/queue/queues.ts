@@ -63,6 +63,11 @@ export interface AnnounceEventJob {
 }
 
 /** Retires events that finished more than the retention window ago. */
+export interface PurgeAbandonedOrdersJob {
+  /** Overrides ORDER_PURGE_AFTER_DAYS for a one-off run. */
+  afterDays?: number;
+}
+
 export interface ArchivePastEventsJob {
   afterDays?: number;
 }
@@ -115,7 +120,9 @@ export const notificationQueue = makeQueue<NotificationJob>(
   QUEUE.NOTIFICATION,
   deliveryJobOptions,
 );
-export const maintenanceQueue = makeQueue<ArchivePastEventsJob | AnnounceEventJob>(
+export const maintenanceQueue = makeQueue<
+  ArchivePastEventsJob | AnnounceEventJob | PurgeAbandonedOrdersJob
+>(
   QUEUE.MAINTENANCE,
 );
 
@@ -150,6 +157,7 @@ export const JOB = {
   ISSUE_TICKETS: 'issue-tickets',
   NOTIFY: 'notify',
   ARCHIVE_PAST_EVENTS: 'archive-past-events',
+  PURGE_ABANDONED_ORDERS: 'purge-abandoned-orders',
   ANNOUNCE_EVENT: 'announce-event',
 } as const;
 
@@ -266,6 +274,20 @@ export async function registerRepeatableJobs(): Promise<void> {
       jobId: 'archive-past-events',
       repeat: { every: 3_600_000 },
       removeOnComplete: { count: 24 },
+    },
+  );
+
+  // Daily. The retention window is thirty days, so the exact hour a purge runs
+  // is immaterial, and this is the only job in the system that deletes anything
+  // — there is no argument for running it more often than the smallest unit it
+  // measures.
+  await maintenanceQueue.add(
+    JOB.PURGE_ABANDONED_ORDERS,
+    {},
+    {
+      jobId: 'purge-abandoned-orders',
+      repeat: { every: 86_400_000 },
+      removeOnComplete: { count: 7 },
     },
   );
 

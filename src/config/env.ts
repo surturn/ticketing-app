@@ -128,6 +128,21 @@ const schema = z.object({
   // Days after an event finishes before it is archived out of the current
   // listing and into past events. Archiving never deletes anything.
   EVENT_ARCHIVE_AFTER_DAYS: z.coerce.number().int().positive().default(2),
+
+  /**
+   * How long an abandoned order is kept before it is deleted.
+   *
+   * Only ever applies to orders that reached no payment and issued no ticket —
+   * see `purgeAbandonedOrders`, where the conditions live. Measured from
+   * creation rather than from expiry, because a delayed M-Pesa callback can
+   * settle an order well after its hold lapsed.
+   *
+   * Floored at seven days. The value exists to be tuned, not to be set to
+   * something that would delete an order while a late callback could still
+   * arrive for it — thirty days is far outside that window, and a day or two
+   * is not.
+   */
+  ORDER_PURGE_AFTER_DAYS: z.coerce.number().int().min(7).default(30),
   RUN_WORKERS_IN_API: bool('false'),
   WORKER_CONCURRENCY: z.coerce.number().int().positive().default(5),
 
