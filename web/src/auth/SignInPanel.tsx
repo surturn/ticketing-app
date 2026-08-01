@@ -39,8 +39,8 @@ const COPY: Record<Mode, { title: string; blurb: string; submit: string }> = {
 };
 
 const field =
-  'w-full rounded-xl border border-line bg-bg px-4 py-3 text-white placeholder:text-slate-500 ' +
-  'transition focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary-ring';
+  'w-full rounded-xl border border-outline-variant bg-surface px-4 py-3 text-on-surface placeholder:text-on-surface-variant ' +
+  'transition focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/20';
 
 export function SignInPanel({ onSignedIn }: { onSignedIn?: () => void }) {
   const [mode, setMode] = useState<Mode>('signin');
@@ -114,8 +114,8 @@ export function SignInPanel({ onSignedIn }: { onSignedIn?: () => void }) {
 
   return (
     <section className="mx-auto w-full max-w-sm">
-      <h1 className="text-3xl text-white">{copy.title}</h1>
-      <p className="mt-2 text-sm text-muted">{copy.blurb}</p>
+      <h1 className="md-headline-large text-on-surface">{copy.title}</h1>
+      <p className="md-body-medium mt-2 text-on-surface-variant">{copy.blurb}</p>
 
       {mode !== 'reset' && (
         <>
@@ -128,9 +128,9 @@ export function SignInPanel({ onSignedIn }: { onSignedIn?: () => void }) {
           </div>
 
           <div className="my-6 flex items-center gap-4">
-            <span className="h-px flex-1 bg-line" />
-            <span className="text-xs tracking-widest text-slate-500 uppercase">or</span>
-            <span className="h-px flex-1 bg-line" />
+            <span className="h-px flex-1 bg-outline-variant" />
+            <span className="md-eyebrow text-on-surface-variant">or</span>
+            <span className="h-px flex-1 bg-outline-variant" />
           </div>
         </>
       )}
@@ -138,8 +138,8 @@ export function SignInPanel({ onSignedIn }: { onSignedIn?: () => void }) {
       <form onSubmit={handleSubmit} className="space-y-4">
         {mode === 'signup' && (
           <div>
-            <label htmlFor="name" className="mb-1.5 block text-sm text-slate-300">
-              Name <span className="text-slate-500">(optional)</span>
+            <label htmlFor="name" className="md-label-large mb-1.5 block text-on-surface-variant">
+              Name <span className="text-on-surface-variant">(optional)</span>
             </label>
             <input
               id="name"
@@ -154,7 +154,7 @@ export function SignInPanel({ onSignedIn }: { onSignedIn?: () => void }) {
         )}
 
         <div>
-          <label htmlFor="email" className="mb-1.5 block text-sm text-slate-300">
+          <label htmlFor="email" className="md-label-large mb-1.5 block text-on-surface-variant">
             Email
           </label>
           <input
@@ -173,13 +173,13 @@ export function SignInPanel({ onSignedIn }: { onSignedIn?: () => void }) {
         {mode !== 'reset' && (
           <div>
             <div className="mb-1.5 flex items-baseline justify-between">
-              <label htmlFor="password" className="block text-sm text-slate-300">
+              <label htmlFor="password" className="md-label-large block text-on-surface-variant">
                 Password
               </label>
               {mode === 'signin' && (
                 <button
                   type="button"
-                  className="text-sm text-slate-500 transition hover:text-slate-300"
+                  className="md-label-large text-on-surface-variant transition hover:text-on-surface"
                   onClick={() => switchTo('reset')}
                 >
                   Forgot?
@@ -204,28 +204,28 @@ export function SignInPanel({ onSignedIn }: { onSignedIn?: () => void }) {
         )}
 
         {error && (
-          <p role="alert" className="text-sm text-red-400">
+          <p role="alert" className="md-body-medium text-error">
             {error}
           </p>
         )}
-        {notice && <p className="text-sm text-valid">{notice}</p>}
+        {notice && <p className="md-body-medium text-primary">{notice}</p>}
 
         <button
           type="submit"
           disabled={busy}
-          className="w-full rounded-full bg-primary px-6 py-3 font-medium text-white transition hover:bg-primary-hover hover:shadow-lg hover:shadow-primary-ring focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50"
+          className="w-full rounded-full bg-primary px-6 py-3 font-medium text-on-surface transition hover:bg-primary hover:shadow-lg hover:shadow-primary-ring focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50"
         >
           {submitting ? 'Working…' : copy.submit}
         </button>
       </form>
 
-      <div className="mt-6 text-center text-sm text-muted">
+      <div className="md-body-medium mt-6 text-center text-on-surface-variant">
         {mode === 'signin' && (
           <>
             New here?{' '}
             <button
               type="button"
-              className="text-primary transition hover:text-primary-hover"
+              className="text-primary transition hover:text-primary"
               onClick={() => switchTo('signup')}
             >
               Create an account
@@ -237,7 +237,7 @@ export function SignInPanel({ onSignedIn }: { onSignedIn?: () => void }) {
             Already have one?{' '}
             <button
               type="button"
-              className="text-primary transition hover:text-primary-hover"
+              className="text-primary transition hover:text-primary"
               onClick={() => switchTo('signin')}
             >
               Sign in
@@ -247,7 +247,7 @@ export function SignInPanel({ onSignedIn }: { onSignedIn?: () => void }) {
         {mode === 'reset' && (
           <button
             type="button"
-            className="text-primary transition hover:text-primary-hover"
+            className="text-primary transition hover:text-primary"
             onClick={() => switchTo('signin')}
           >
             Back to sign in

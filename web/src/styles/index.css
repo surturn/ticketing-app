@@ -1,97 +1,323 @@
 @import 'tailwindcss';
 
-/* Self-hosted rather than loaded from a font CDN: no third-party request on the
-   critical path, nothing to break if that host is blocked, and no layout shift
-   while a webfont arrives. Weights are limited to the ones the brand actually
-   uses — 700/800 display, 400/500 body. */
+/* Self-hosted rather than fetched from Google Fonts: no third-party request on
+   the critical path, nothing to break if that host is blocked, and no layout
+   shift while a webfont arrives.
+
+   Three families, three jobs (see §4.1 of the design guidelines):
+     Plus Jakarta Sans — display, 700/800
+     Inter             — body, 400/500/600
+     JetBrains Mono    — data, 400/500 */
 @import '@fontsource/plus-jakarta-sans/700.css';
 @import '@fontsource/plus-jakarta-sans/800.css';
 @import '@fontsource/inter/400.css';
 @import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/500.css';
+
+/* The theme is chosen explicitly and stored, so `dark:` has to follow the
+   `data-theme` attribute rather than Tailwind's default `prefers-color-scheme`
+   — otherwise a manual toggle would leave these utilities reporting the OS
+   setting instead of the one the visitor picked. */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
 
 /* ---------------------------------------------------------------------------
-   Design tokens.
+   Material Design 3, adapted — Eventify Tickets.
 
-   Declared in `@theme` so Tailwind generates utilities from them — `bg-primary`,
-   `text-gold`, `border-muted`, `ring-primary/20` — which is what the brand
-   guidelines reference directly. Semantic names, not literal ones: the doc says
-   gold means "success, VIP, celebration", so `text-gold` at a call site carries
-   that intent, where `text-amber-500` would not.
+   This file is the machine-readable half of the design guidelines. Every
+   colour, radius, duration and spacing value used by a component must resolve
+   to a token declared here; nothing inlines a hex.
 
-   The palette's greys are Tailwind's slate scale: the doc's #94A3B8 is slate-400
-   and #334155 is slate-700, so slate-* utilities compose cleanly with these.
+   The colour system is a set of *roles*, not literals. A component asks for
+   `surface-container` or `on-surface-variant`, and the scheme decides what that
+   means — which is what makes light and dark two expressions of one system
+   rather than two stylesheets.
+
+     primary    blue — attend, buy, navigate. The audience.
+     tertiary   gold — host, sell, earn, VIP. The customer.
+     neutral    surfaces and text, tinted toward blue so they read cool and
+                considered rather than as dead newsprint.
+     error      Material's standard error palette.
+
+   Roles are paired: every `x` has an `on-x` guaranteed legible against it, so
+   contrast is a property of the system rather than something each screen has to
+   re-check.
    --------------------------------------------------------------------------- */
-@theme {
-  /* Primary action — drives every forward step. Tailwind blue-500. */
-  --color-primary: #3b82f6;
-  --color-primary-hover: #60a5fa;
-  --color-primary-ring: rgb(59 130 246 / 0.2);
 
-  /* Backgrounds: deep slate/navy, never pure black. */
-  --color-bg: #0b121c;
-  --color-surface: #111a27;
-  --color-elevated: #1a2433;
+:root {
+  /* ---- Tonal palettes ------------------------------------------------------
+     The raw tones. Components should reach for a *role* below rather than a
+     tone directly; these exist so roles have somewhere to resolve from, and so
+     a one-off (a gradient stop, a scrim) has a sanctioned value to use instead
+     of an invented one. Do not generate intermediate tones. */
 
-  /* Reserved strictly for success, VIP tiers and celebration. */
-  --color-gold: #f59e0b;
-  --color-gold-glow: rgb(245 158 11 / 0.4);
+  --blue-10: #001b3e;
+  --blue-20: #002f65;
+  --blue-30: #00458f;
+  --blue-40: #0b5fd9;
+  --blue-50: #2e79f0;
+  --blue-60: #5a95ff;
+  --blue-70: #8ab4ff;
+  --blue-80: #b0ccff;
+  --blue-90: #d8e2ff;
+  --blue-95: #ecf0ff;
 
-  /* Muted text and structural borders. */
-  --color-muted: #94a3b8;
-  --color-line: #334155;
+  --gold-10: #241a00;
+  --gold-20: #3e2e00;
+  --gold-30: #5a4400;
+  --gold-40: #785b00;
+  --gold-50: #977300;
+  --gold-60: #b78d00;
+  --gold-70: #d8a700;
+  --gold-80: #f5c242;
+  --gold-90: #ffdf9e;
+  --gold-95: #ffefd2;
 
-  /* Inline field validation only — see the optimistic-validation rules. */
-  --color-valid: #10b981;
+  --neutral-10: #191c20;
+  --neutral-20: #2d3135;
+  --neutral-30: #43474c;
+  --neutral-40: #5b5e63;
+  --neutral-50: #74777c;
+  --neutral-60: #8e9196;
+  --neutral-70: #a9acb1;
+  --neutral-80: #c5c7cc;
+  --neutral-90: #e1e2e8;
+  --neutral-95: #eff0f6;
+  --neutral-98: #f9f9ff;
+  --neutral-99: #fcfcff;
 
-  --font-display: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
-  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  /* ---- Roles: light (default) ---------------------------------------------
+     Light is the default theme. White is a dominant brand colour; light and
+     dark are equal citizens, and neither is derived by inverting the other. */
+  color-scheme: light;
 
-  /* The success spring from the animation spec, so every celebratory
-     transition shares one physical feel. */
-  --ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --md-primary: #0b5fd9;
+  --md-on-primary: #ffffff;
+  --md-primary-container: #d8e2ff;
+  --md-on-primary-container: #001b3e;
+
+  /* The quieter companion, for tonal surfaces and chips. */
+  --md-secondary: #565e71;
+  --md-on-secondary: #ffffff;
+  --md-secondary-container: #dae2f9;
+  --md-on-secondary-container: #131c2b;
+
+  /* Gold, as bronze. Bright gold on white measures ~1.9:1 and fails AA at
+     every size, so in light mode gold is only ever a *fill* with dark text on
+     top — as text or an icon it must be this tone. It reads as bronze rather
+     than gold, and that is correct. */
+  --md-tertiary: #785b00;
+  --md-on-tertiary: #ffffff;
+  --md-tertiary-container: #ffdf9e;
+  --md-on-tertiary-container: #241a00;
+
+  --md-error: #ba1a1a;
+  --md-on-error: #ffffff;
+  --md-error-container: #ffdad6;
+  --md-on-error-container: #410002;
+
+  /* Confirmation. Not in the three seeds because it is not a brand colour — it
+     is the one thing a green is genuinely better at than blue: saying "that
+     field is right" without being mistaken for "that field is a link".
+     Restricted to validation marks; it is never a surface or an action.
+     Tuned to clear 4.5:1 on white, like every other text role here. */
+  --md-success: #1c6b3f;
+  --md-success-container: #b8f2cd;
+  --md-on-success-container: #00210f;
+
+  /* M3 replaced one elevation-tinted surface with a family of containers, so a
+     raised element is a *different surface* rather than the same one with a
+     shadow bolted on. */
+  --md-surface: #faf9fd;
+  --md-on-surface: #1a1b21;
+  --md-surface-variant: #e0e2ec;
+  --md-on-surface-variant: #44474f;
+
+  --md-surface-container-lowest: #ffffff;
+  --md-surface-container-low: #f4f3fa;
+  --md-surface-container: #eeedf4;
+  --md-surface-container-high: #e8e7ef;
+  --md-surface-container-highest: #e2e2e9;
+
+  --md-outline: #74777f;
+  --md-outline-variant: #c4c6d0;
+  --md-scrim: #000000;
+
+  --md-inverse-surface: #2f3033;
+  --md-inverse-on-surface: #f1f0f4;
 }
 
-/* ---------------------------------------------------------------------------
-   Base layer
-   --------------------------------------------------------------------------- */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --md-primary: #b0ccff;
+  --md-on-primary: #002f65;
+  --md-primary-container: #00458f;
+  --md-on-primary-container: #d8e2ff;
+
+  --md-secondary: #bec6dc;
+  --md-on-secondary: #283141;
+  --md-secondary-container: #3e4759;
+  --md-on-secondary-container: #dae2f9;
+
+  /* On dark surfaces gold clears 9:1 and is unrestricted — this is where it
+     gets to actually look like gold. */
+  --md-tertiary: #f5c242;
+  --md-on-tertiary: #3e2e00;
+  --md-tertiary-container: #5a4400;
+  --md-on-tertiary-container: #ffdf9e;
+
+  --md-error: #ffb4ab;
+  --md-on-error: #690005;
+  --md-error-container: #93000a;
+  --md-on-error-container: #ffdad6;
+
+  /* Lifted well up the ramp so it clears 4.5:1 against the dark surface. */
+  --md-success: #7edaa2;
+  --md-success-container: #00522c;
+  --md-on-success-container: #b8f2cd;
+
+  /* Not near-black: the surface holds a slight blue tint so posters pop
+     against it rather than dissolving into it. */
+  --md-surface: #121318;
+  --md-on-surface: #e3e2e9;
+  --md-surface-variant: #44474f;
+  --md-on-surface-variant: #c4c6d0;
+
+  --md-surface-container-lowest: #0d0e13;
+  --md-surface-container-low: #1a1b21;
+  --md-surface-container: #1e1f25;
+  --md-surface-container-high: #282a2f;
+  --md-surface-container-highest: #33353a;
+
+  --md-outline: #8e9199;
+  --md-outline-variant: #44474f;
+  --md-scrim: #000000;
+
+  --md-inverse-surface: #e3e2e9;
+  --md-inverse-on-surface: #2f3033;
+}
+
+@theme {
+  /* Roles, exposed as utilities: bg-surface-container, text-on-surface-variant,
+     border-outline-variant, and so on. */
+  --color-primary: var(--md-primary);
+  --color-on-primary: var(--md-on-primary);
+  --color-primary-container: var(--md-primary-container);
+  --color-on-primary-container: var(--md-on-primary-container);
+
+  --color-secondary: var(--md-secondary);
+  --color-on-secondary: var(--md-on-secondary);
+  --color-secondary-container: var(--md-secondary-container);
+  --color-on-secondary-container: var(--md-on-secondary-container);
+
+  --color-tertiary: var(--md-tertiary);
+  --color-on-tertiary: var(--md-on-tertiary);
+  --color-tertiary-container: var(--md-tertiary-container);
+  --color-on-tertiary-container: var(--md-on-tertiary-container);
+
+  --color-error: var(--md-error);
+  --color-on-error: var(--md-on-error);
+  --color-error-container: var(--md-error-container);
+  --color-on-error-container: var(--md-on-error-container);
+
+  --color-success: var(--md-success);
+  --color-success-container: var(--md-success-container);
+  --color-on-success-container: var(--md-on-success-container);
+
+  --color-surface: var(--md-surface);
+  --color-on-surface: var(--md-on-surface);
+  --color-surface-variant: var(--md-surface-variant);
+  --color-on-surface-variant: var(--md-on-surface-variant);
+
+  --color-surface-container-lowest: var(--md-surface-container-lowest);
+  --color-surface-container-low: var(--md-surface-container-low);
+  --color-surface-container: var(--md-surface-container);
+  --color-surface-container-high: var(--md-surface-container-high);
+  --color-surface-container-highest: var(--md-surface-container-highest);
+
+  --color-outline: var(--md-outline);
+  --color-outline-variant: var(--md-outline-variant);
+  --color-scrim: var(--md-scrim);
+
+  --color-inverse-surface: var(--md-inverse-surface);
+  --color-inverse-on-surface: var(--md-inverse-on-surface);
+
+  /* Three families, three registers. `--font-data` is the ticket-stub voice:
+     the typeface of printed, machine-verified truth. It is spent only on facts
+     the venue door will check — never on headings, labels or chrome. */
+  --font-display: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-data: 'JetBrains Mono', ui-monospace, monospace;
+  /* Alias, so `font-mono` keeps resolving for anything not yet migrated. */
+  --font-mono: var(--font-data);
+
+  /* Shape scale. Radius carries meaning: chips and badges are extra-small,
+     cards medium, hero surfaces extra-large, buttons fully rounded. */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 28px;
+
+  /* Motion. M3 easing, four durations — anything longer than `xlong` is the
+     success choreography and belongs in a spring, not a transition. */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
+  --ease-decelerate: cubic-bezier(0, 0, 0, 1);
+  --ease-accelerate: cubic-bezier(0.3, 0, 1, 1);
+  /* Prior spellings, still referenced by a few components. */
+  --ease-emphasised: var(--ease-emphasized);
+  --ease-emphasised-decel: var(--ease-decelerate);
+}
+
+:root {
+  /* Spacing — 4pt base. Tailwind's own scale already lands on these steps, so
+     these exist for hand-written CSS and for the one-offs that would otherwise
+     invent a value. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  --dur-short: 150ms;
+  --dur-medium: 250ms;
+  --dur-long: 400ms;
+  --dur-xlong: 600ms;
+
+  /* State layers, as fixed opacities. Never build a hover state by
+     hand-picking a darker hex. */
+  --state-hover: 0.08;
+  --state-focus: 0.1;
+  --state-pressed: 0.1;
+  --state-dragged: 0.16;
+  --state-disabled-content: 0.38;
+  --state-disabled-container: 0.12;
+}
+
 @layer base {
   html {
-    /* Dark-mode first: declared so form controls, scrollbars and the overscroll
-       area are dark too, rather than flashing white at the edges. */
-    color-scheme: dark;
-    background-color: var(--color-bg);
-    -webkit-tap-highlight-color: transparent;
+    background-color: var(--md-surface);
   }
 
   body {
     margin: 0;
-    background-color: var(--color-bg);
-    color: #e2e8f0;
+    background-color: var(--md-surface);
+    color: var(--md-on-surface);
     font-family: var(--font-sans);
-    font-weight: 400;
     -webkit-font-smoothing: antialiased;
   }
 
-  h1,
-  h2,
-  h3 {
-    font-family: var(--font-display);
-    font-weight: 800;
-    /* "Keep tracking slightly tight for high impact." */
-    letter-spacing: -0.02em;
-    line-height: 1.1;
-  }
-
-  /* Focus is never removed, only restyled — a keyboard user must always be able
-     to see where they are. */
   :focus-visible {
-    outline: 2px solid var(--color-primary);
+    outline: 2px solid var(--md-primary);
     outline-offset: 2px;
   }
 
-  /* Honour a reduced-motion preference. The celebration is the most motion-heavy
-     moment in the product, so this is not optional: the ticket still appears and
-     still reads as a success, it simply does not fly or burst. */
   @media (prefers-reduced-motion: reduce) {
     *,
     *::before,
@@ -104,28 +330,415 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Utilities the brand doc calls for by description rather than by class
+   Type scale.
+
+   Referring to roles by name keeps family, size, weight, line-height and
+   tracking travelling together, which is the point of a scale: you pick a
+   role, not a font-size.
+
+   Display and headline sizes are fluid via clamp() so there is no jump at a
+   breakpoint. Display L bottoms out at 40px and Display M at 34px, which is
+   what keeps a hero headline inside three lines on a 360px screen.
    --------------------------------------------------------------------------- */
-@utility gold-glow {
-  /* The radial pulse behind a revealed ticket. */
+@utility md-display-large {
+  font-family: var(--font-display);
+  font-size: clamp(2.5rem, 1.75rem + 3.75vw, 3.5625rem);
+  line-height: 1.12;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+@utility md-display-medium {
+  font-family: var(--font-display);
+  font-size: clamp(2.125rem, 1.65rem + 2.375vw, 2.8125rem);
+  line-height: 1.16;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+@utility md-display-small {
+  font-family: var(--font-display);
+  font-size: clamp(1.875rem, 1.55rem + 1.625vw, 2.25rem);
+  line-height: 1.22;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+@utility md-headline-large {
+  font-family: var(--font-display);
+  font-size: clamp(1.75rem, 1.6rem + 0.75vw, 2rem);
+  line-height: 1.25;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+@utility md-headline-medium {
+  font-family: var(--font-display);
+  font-size: clamp(1.5rem, 1.35rem + 0.75vw, 1.75rem);
+  line-height: 1.29;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+@utility md-headline-small {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  line-height: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+@utility md-title-large {
+  font-family: var(--font-display);
+  font-size: 1.375rem;
+  line-height: 1.75rem;
+  font-weight: 700;
+}
+@utility md-title-medium {
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.5rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+@utility md-title-small {
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+@utility md-body-large {
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.5rem;
+  font-weight: 400;
+}
+@utility md-body-medium {
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+}
+@utility md-body-small {
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+}
+@utility md-label-large {
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+@utility md-label-medium {
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+@utility md-label-small {
+  font-family: var(--font-sans);
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+}
+
+/* The data register — dates, times, prices, codes, references, quantities,
+   counts. Tabular figures throughout so a column of prices lines up and a
+   countdown does not jitter as digits change. */
+@utility md-data-large {
+  font-family: var(--font-data);
+  font-size: 1rem;
+  line-height: 1.5rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+@utility md-data-medium {
+  font-family: var(--font-data);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+@utility md-data-small {
+  font-family: var(--font-data);
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Section markers. Body font, not mono — an eyebrow is chrome, not a fact the
+   door will check. */
+@utility md-eyebrow {
+  font-family: var(--font-sans);
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* ---------------------------------------------------------------------------
+   Elevation.
+
+   Dark mode uses surface tone alone — a raised element is a lighter container,
+   not a shadow. Light mode uses both, because on white a container step of two
+   or three percent is not enough separation on its own.
+   --------------------------------------------------------------------------- */
+@utility md-elevation-1 {
+  background-color: var(--md-surface-container-low);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.06);
+}
+@utility md-elevation-2 {
+  background-color: var(--md-surface-container);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.08);
+}
+@utility md-elevation-3 {
+  background-color: var(--md-surface-container-high);
+  box-shadow: 0 6px 14px rgb(0 0 0 / 0.1);
+}
+
+:root[data-theme='dark'] .md-elevation-1,
+:root[data-theme='dark'] .md-elevation-2,
+:root[data-theme='dark'] .md-elevation-3 {
+  box-shadow: none;
+}
+
+/* ---------------------------------------------------------------------------
+   State layers.
+
+   M3 does not darken or lighten a component on hover; it lays a translucent
+   sheet of the *content* colour over it — 8% hovered, 10% focused or pressed.
+   That is why a hovered filled button and a hovered plain icon feel related
+   rather than merely both being "a bit different".
+
+   An ::after-style overlay, so it tints without touching the background and
+   works over an image as well as over a colour.
+   --------------------------------------------------------------------------- */
+@utility md-state {
+  position: relative;
+  isolation: isolate;
+}
+@utility md-state-layer {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-color: currentColor;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-short) var(--ease-standard);
+}
+.md-state:hover > .md-state-layer {
+  opacity: var(--state-hover);
+}
+.md-state:focus-visible > .md-state-layer {
+  opacity: var(--state-focus);
+}
+.md-state:active > .md-state-layer {
+  opacity: var(--state-pressed);
+}
+
+/* ---------------------------------------------------------------------------
+   Signature motifs.
+
+   Three devices carry the identity, and they are the reason this doesn't read
+   as a template with a blue accent. Used sparingly: at most one perforation
+   per viewport.
+   --------------------------------------------------------------------------- */
+
+/* The tear line. Marks the boundary where a ticket would come apart. */
+@utility stub-edge {
+  height: 8px;
   background-image: radial-gradient(
-    circle at center,
-    var(--color-gold-glow) 0%,
-    transparent 70%
+    circle at 4px 4px,
+    var(--md-outline-variant) 2.5px,
+    transparent 2.6px
+  );
+  background-size: 16px 8px;
+  background-repeat: repeat-x;
+}
+
+/* The punched stub — a single 8px inward notch at the top-left corner. Applied
+   as a clip-path so it cuts the element itself rather than being faked with a
+   coloured square that only works over a known background. */
+@utility notched {
+  clip-path: polygon(
+    8px 0,
+    100% 0,
+    100% 100%,
+    0 100%,
+    0 8px
   );
 }
 
+/* A shimmer *sweeping over* the placeholder rather than the whole block
+   pulsing. The difference matters: a pulse reads as something blinking at you,
+   a sweep reads as something arriving, which is what is actually happening. */
 @utility skeleton {
-  background-color: var(--color-elevated);
-  animation: skeleton-pulse 1.6s ease-in-out infinite;
+  position: relative;
+  overflow: hidden;
+  background-color: var(--md-surface-container-high);
 }
 
-@keyframes skeleton-pulse {
-  0%,
-  100% {
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background-image: linear-gradient(
+    90deg,
+    transparent 0,
+    color-mix(in srgb, var(--md-surface-container-lowest) 55%, transparent) 50%,
+    transparent 100%
+  );
+  animation: skeleton-sweep var(--dur-xlong) var(--ease-standard) infinite;
+}
+
+@keyframes skeleton-sweep {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after {
+    animation: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Success choreography.
+
+   The one moment gold appears on a consumer surface: a single radial pulse
+   behind the ticket as it lands, marking the transition from buying to owning.
+   Deliberate rather than decorative, which is why it fires once and never
+   loops.
+   --------------------------------------------------------------------------- */
+@utility gold-glow {
+  position: absolute;
+  inset: -20%;
+  pointer-events: none;
+  border-radius: 9999px;
+  background: radial-gradient(
+    circle at center,
+    color-mix(in srgb, var(--md-tertiary) 30%, transparent) 0%,
+    transparent 68%
+  );
+  opacity: 0;
+  animation: gold-pulse var(--dur-xlong) var(--ease-decelerate) 1 forwards;
+}
+
+@keyframes gold-pulse {
+  0% {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  45% {
     opacity: 1;
   }
-  50% {
-    opacity: 0.55;
+  100% {
+    opacity: 0;
+    transform: scale(1.15);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gold-glow {
+    animation: none;
+  }
+}
+
+/* The ticker of what is on — the one piece of ambient motion kept. */
+@utility ticker {
+  animation: ticker-scroll 38s linear infinite;
+  will-change: transform;
+}
+
+@keyframes ticker-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ticker {
+    animation: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   View transitions.
+
+   The poster morphs from its card into the event page header rather than the
+   page being replaced. It is the largest perceived-quality win available for
+   the amount of code, and it is what makes a tap feel like the same object
+   opening instead of a navigation.
+
+   Progressive enhancement throughout: a browser without the API simply gets
+   the ordinary navigation, and nothing here is load-bearing.
+   --------------------------------------------------------------------------- */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--dur-medium);
+  animation-timing-function: var(--ease-standard);
+}
+
+/* The poster is the shared element. Naming it per event slug is what lets the
+   browser pair the card's image with the header's — an unqualified name would
+   match every card on the page at once and the transition would be dropped. */
+::view-transition-group(poster) {
+  animation-duration: var(--dur-long);
+  animation-timing-function: var(--ease-emphasized);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Scroll-driven header elevation.
+
+   The masthead lifts once the page has moved beneath it. Driven by a scroll
+   timeline rather than a scroll listener, so it runs off the main thread and
+   costs nothing on a mid-range phone — the listener version is a per-frame
+   layout read on the exact devices with least headroom for one.
+   --------------------------------------------------------------------------- */
+@supports (animation-timeline: scroll()) {
+  /* Elevation 2, which in M3 is a different *container* plus a shadow — not
+     the same surface with a shadow bolted on. */
+  @keyframes header-lift {
+    to {
+      background-color: var(--md-surface-container);
+      box-shadow: 0 2px 6px rgb(0 0 0 / 0.08);
+    }
+  }
+
+  .header-lift {
+    animation: header-lift linear both;
+    animation-timeline: scroll();
+    /* Fully lifted within the first 64px — this is a state change dressed as
+       an animation, not a parallax that tracks the whole page. */
+    animation-range: 0 64px;
+  }
+
+  :root[data-theme='dark'] .header-lift {
+    /* Dark mode carries elevation as surface tone alone (§3.6). */
+    animation-name: header-lift-dark;
+  }
+
+  @keyframes header-lift-dark {
+    to {
+      background-color: var(--md-surface-container);
+    }
   }
 }

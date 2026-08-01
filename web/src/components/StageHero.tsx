@@ -1,0 +1,194 @@
+/**
+ * The masthead, as a lit stage — pointed at organisers.
+ *
+ * Nobody browses a ticketing homepage in this market. Discovery happens in
+ * Instagram stories and WhatsApp groups, and a buyer arrives on an event page
+ * from a link somebody posted. So the homepage is not a shop window: it is a
+ * landing page for the person deciding where to list, and its job is to answer
+ * "will you sell my tickets and pay me quickly". Discovery sits below it.
+ *
+ * Everything else on this page belongs to the promoters — their posters, their
+ * copy. This is the one piece of artwork the product draws itself, so it is
+ * drawn from the subject rather than from a gradient generator: light beams
+ * falling from above, a row of marquee bulbs along the header edge, and a
+ * ticker of what is actually on.
+ *
+ * All of it is SVG and CSS. There is no image to request, it resizes to any
+ * width without a second asset, and it costs about a kilobyte.
+ */
+import { useMemo } from 'react';
+import type { EventSummary } from '@/lib/api';
+import { ButtonAnchor } from '@/components/ui';
+
+/**
+ * Beams from the lighting rig.
+ *
+ * Trapezoids rather than cones — a par can throws a hard-edged shaft, and the
+ * softness comes from the blur behind it, not from the shape. Angles are
+ * deliberately uneven: a rig aimed in perfect symmetry reads as wallpaper.
+ */
+function StageLights() {
+  return (
+    <svg
+      className="absolute inset-x-0 top-0 h-full w-full"
+      viewBox="0 0 1200 420"
+      preserveAspectRatio="xMidYMin slice"
+      aria-hidden="true"
+    >
+      <defs>
+        <linearGradient id="beam-cool" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" style={{ stopColor: 'var(--blue-60)' }} stopOpacity="0.5" />
+          <stop offset="55%" style={{ stopColor: 'var(--blue-50)' }} stopOpacity="0.14" />
+          <stop offset="100%" style={{ stopColor: 'var(--blue-50)' }} stopOpacity="0" />
+        </linearGradient>
+        {/* The house light. Neutral rather than pure white so it stays a beam
+            in light mode instead of vanishing into the page. */}
+        <linearGradient id="beam-white" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" style={{ stopColor: 'var(--neutral-99)' }} stopOpacity="0.42" />
+          <stop offset="60%" style={{ stopColor: 'var(--neutral-99)' }} stopOpacity="0.08" />
+          <stop offset="100%" style={{ stopColor: 'var(--neutral-99)' }} stopOpacity="0" />
+        </linearGradient>
+        <filter id="haze" x="-30%" y="-30%" width="160%" height="160%">
+          <feGaussianBlur stdDeviation="26" />
+        </filter>
+      </defs>
+
+      <g filter="url(#haze)">
+        <polygon points="150,-40 230,-40 470,430 30,430" fill="url(#beam-cool)" />
+        <polygon points="600,-40 660,-40 810,430 470,430" fill="url(#beam-white)" />
+        <polygon points="980,-40 1060,-40 1190,430 830,430" fill="url(#beam-cool)" />
+      </g>
+    </svg>
+  );
+}
+
+/**
+ * The bulb strip along the top edge, as on a theatre marquee.
+ *
+ * Spacing is fixed in pixels and the row simply clips at the viewport edge —
+ * a real marquee is built to the frontage and does not redistribute its bulbs
+ * to fit, and evenly-spaced-to-fill would have made it read as a progress bar.
+ */
+function MarqueeBulbs() {
+  return (
+    <div
+      className="pointer-events-none absolute inset-x-0 top-0 flex gap-6 overflow-hidden px-2"
+      aria-hidden="true"
+    >
+      {Array.from({ length: 60 }).map((_, index) => (
+        <span
+          key={index}
+          className="mt-[-4px] size-[7px] shrink-0 rounded-full bg-primary/70"
+          style={{
+            boxShadow: '0 0 8px 2px color-mix(in srgb, var(--blue-60) 45%, transparent)',
+            // Every third bulb is dimmer. Real strips have dead bulbs, and the
+            // irregularity is what stops this reading as a dotted border.
+            opacity: index % 3 === 0 ? 0.35 : 0.9,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * A ticker of what is on.
+ *
+ * Real content, not decoration: it names the events the page is already
+ * showing. On an organiser landing page it is also the proof — these are shows
+ * already selling here. Duplicated once so the loop has something to scroll
+ * into, with the copy hidden from assistive technology so the list is not
+ * announced twice.
+ */
+function Ticker({ events }: { events: EventSummary[] }) {
+  const line = useMemo(() => {
+    const names = events.slice(0, 8).map((event) => event.name.toUpperCase());
+    return names.length > 0 ? names : ['TICKETS ON SALE NOW'];
+  }, [events]);
+
+  const Run = ({ hidden }: { hidden?: boolean }) => (
+    <span
+      className="flex shrink-0 items-center gap-8 pr-8"
+      aria-hidden={hidden || undefined}
+    >
+      {line.map((name, index) => (
+        <span key={`${name}-${index}`} className="flex items-center gap-8">
+          {/* Body font, not mono: an event name is a title, not a fact the
+              door will check. The wide tracking carries the ticker-tape read
+              on its own. */}
+          <span className="md-label-medium tracking-[0.25em] text-on-surface-variant">
+            {name}
+          </span>
+          <span className="text-primary" aria-hidden="true">
+            ●
+          </span>
+        </span>
+      ))}
+    </span>
+  );
+
+  return (
+    <div className="relative flex overflow-hidden border-y border-outline-variant/70 py-2.5">
+      <div className="ticker flex">
+        <Run />
+        <Run hidden />
+      </div>
+
+      {/* Faded ends, so the text arrives and leaves rather than being cut off
+          mid-letter against the edge. */}
+      <div
+        className="pointer-events-none absolute inset-y-0 left-0 w-16 bg-gradient-to-r from-surface to-transparent"
+        aria-hidden="true"
+      />
+      <div
+        className="pointer-events-none absolute inset-y-0 right-0 w-16 bg-gradient-to-l from-surface to-transparent"
+        aria-hidden="true"
+      />
+    </div>
+  );
+}
+
+export function StageHero({ events }: { events: EventSummary[] }) {
+  return (
+    <section id="host" className="relative -mx-4 mb-10 overflow-hidden sm:-mx-6">
+      <MarqueeBulbs />
+      <StageLights />
+
+      {/* Capped so the first real module clears the fold on a phone. `dvh`,
+          not `vh`: with `vh` the hero is sized against the viewport *without*
+          browser chrome, so it overshoots by the height of the address bar
+          until the user scrolls and it collapses. */}
+      <div className="relative flex max-h-[60dvh] flex-col justify-center px-4 pt-10 pb-8 sm:px-6 sm:pt-14 sm:pb-10">
+        {/* Gold, because this whole block is the organiser side of the product
+            speaking. It is the one page where that is the default rather than
+            the exception. */}
+        <p className="md-eyebrow text-tertiary">For organisers · Nairobi</p>
+
+        <h1 className="md-display-large mt-3 max-w-3xl">
+          Sell out your
+          <br />
+          next event
+        </h1>
+
+        <p className="md-body-large mt-5 max-w-md text-on-surface-variant">
+          List in minutes, share one link, and get paid by M-Pesa. Your buyers
+          never leave WhatsApp to find you.
+        </p>
+
+        <div className="mt-7 flex flex-wrap items-center gap-3">
+          {/* Filled gold: the organiser's primary action, and the only filled
+              button in this view. */}
+          <ButtonAnchor href="#pricing" variant="gold">
+            Start listing
+          </ButtonAnchor>
+
+          <ButtonAnchor href="#whats-on" variant="outlined">
+            See what&rsquo;s on
+          </ButtonAnchor>
+        </div>
+      </div>
+
+      <Ticker events={events} />
+    </section>
+  );
+}

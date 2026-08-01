@@ -48,10 +48,10 @@ export function VerifyEmailNotice() {
   }
 
   return (
-    <div className="rounded-xl border border-gold/30 bg-surface p-5">
-      <p className="font-medium text-gold">Verify your email</p>
-      <p className="mt-1.5 text-sm text-muted">
-        We sent a link to <span className="text-slate-300">{user.email}</span>. Until
+    <div className="rounded-xl border border-tertiary/30 bg-surface-container p-5">
+      <p className="font-medium text-tertiary">Verify your email</p>
+      <p className="md-body-medium mt-1.5 text-on-surface-variant">
+        We sent a link to <span className="text-on-surface-variant">{user.email}</span>. Until
         you open it, any tickets you bought as a guest with this address stay
         unlinked from your account.
       </p>
@@ -61,7 +61,7 @@ export function VerifyEmailNotice() {
           type="button"
           onClick={check}
           disabled={state === 'checking'}
-          className="rounded-full border border-line px-5 py-2 text-sm font-medium text-slate-200 transition hover:bg-elevated disabled:opacity-50"
+          className="rounded-full border border-outline-variant px-5 py-2 md-label-large text-on-surface-variant transition hover:bg-surface-container-high disabled:opacity-50"
         >
           {state === 'checking' ? 'Checking…' : "I've verified"}
         </button>
@@ -70,14 +70,14 @@ export function VerifyEmailNotice() {
           type="button"
           onClick={resend}
           disabled={state === 'sending' || state === 'sent'}
-          className="px-2 py-2 text-sm text-slate-500 transition hover:text-slate-300 disabled:opacity-50"
+          className="md-label-large px-2 py-2 text-on-surface-variant transition hover:text-on-surface disabled:opacity-50"
         >
           {state === 'sending' ? 'Sending…' : state === 'sent' ? 'Email sent' : 'Resend email'}
         </button>
       </div>
 
       {error && (
-        <p role="alert" className="mt-3 text-sm text-red-400">
+        <p role="alert" className="md-body-medium mt-3 text-error">
           {error}
         </p>
       )}

@@ -3,11 +3,41 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- Dark-mode first: tells the browser to render form controls, scrollbars
-         and the overscroll area dark, so there is no white flash before CSS. -->
-    <meta name="color-scheme" content="dark" />
-    <meta name="theme-color" content="#0B121C" />
-    <title>Tickets</title>
+    <!-- Both themes are supported, so form controls, scrollbars and the
+         overscroll area follow whichever one is active. -->
+    <meta name="color-scheme" content="light dark" />
+    <!-- Matches `--md-surface` in each theme, so the browser's own chrome
+         continues the page rather than butting against it. -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#FAF9FD" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#121318" />
+    <title>Eventify Tickets</title>
+    <meta
+      name="description"
+      content="Buy event tickets in Kenya with M-Pesa. Tickets are emailed to you and scanned at the door."
+    />
+    <!-- The wordmark's notched stub, inlined so there is no extra request and
+         nothing to 404. -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cmask id='n'%3E%3Crect width='32' height='32' fill='white'/%3E%3Ccircle cx='0' cy='16' r='5' fill='black'/%3E%3Ccircle cx='32' cy='16' r='5' fill='black'/%3E%3C/mask%3E%3Crect width='32' height='32' rx='9' fill='%230B5FD9' mask='url(%23n)'/%3E%3Ccircle cx='16' cy='11' r='1.6' fill='%23001B3E'/%3E%3Ccircle cx='16' cy='16' r='1.6' fill='%23001B3E'/%3E%3Ccircle cx='16' cy='21' r='1.6' fill='%23001B3E'/%3E%3C/svg%3E"
+    />
+    <script>
+      // Inline, in <head>, and deliberately render-blocking: it must run before
+      // the first paint or a light-mode visitor gets a dark flash on every load.
+      // Wrapped, because blocked storage must never stop the page rendering.
+      try {
+        var stored = localStorage.getItem('eventify-theme');
+        var light = stored
+          ? stored === 'light'
+          : window.matchMedia('(prefers-color-scheme: light)').matches;
+        document.documentElement.dataset.theme = light ? 'light' : 'dark';
+      } catch (e) {
+        // Light, not dark. White is a dominant brand colour and light is the
+        // default theme — falling back to dark would make a storage failure
+        // silently change which theme the product ships as.
+        document.documentElement.dataset.theme = 'light';
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -25,11 +25,11 @@ export function AccountPanel() {
   return (
     <section className="mx-auto w-full max-w-md space-y-6">
       <div>
-        <p className="text-sm font-medium text-muted">
+        <p className="md-eyebrow text-on-surface-variant">
           {session?.created ? 'Welcome' : 'Welcome back'}
         </p>
-        <h1 className="mt-2 text-3xl text-white">{name ?? user.email}</h1>
-        <p className="mt-2 text-sm text-muted">
+        <h1 className="md-headline-large mt-2 text-on-surface">{name ?? user.email}</h1>
+        <p className="md-body-medium mt-2 text-on-surface-variant">
           Signed in with {PROVIDER_LABEL[provider] ?? provider}
           {user.emailVerified && ' · email verified'}
         </p>
@@ -39,16 +39,20 @@ export function AccountPanel() {
 
       {/* Worth saying out loud. A buyer who bought as a guest months ago has no
           reason to expect those orders to appear, so silently attaching them is
-          a missed reassurance at exactly the moment they were worried. */}
+          a missed reassurance at exactly the moment they were worried.
+
+          Blue, not gold: this is a buyer being reassured about their own
+          tickets. Gold on a consumer surface means "this leads to the organiser
+          side", and spending it on good news here would blunt the one signal
+          that distinguishes the two halves of the product. */}
       {session && session.linkedOrders > 0 && (
-        <div className="relative overflow-hidden rounded-xl border border-gold/30 bg-surface p-6">
-          <div className="gold-glow pointer-events-none absolute -inset-8" />
-          <p className="relative font-display text-xl font-extrabold text-gold">
+        <div className="relative overflow-hidden rounded-md border border-primary/30 bg-surface-container p-6">
+          <p className="md-title-large relative text-on-surface">
             {session.linkedOrders === 1
               ? 'We found an earlier order'
               : `We found ${session.linkedOrders} earlier orders`}
           </p>
-          <p className="relative mt-1.5 text-sm text-muted">
+          <p className="md-body-medium relative mt-1.5 text-on-surface-variant">
             Tickets you bought as a guest with this address are now in your account.
           </p>
         </div>
@@ -57,7 +61,7 @@ export function AccountPanel() {
       {/* The buyer is genuinely signed in; only the API round-trip failed. Said
           plainly so it does not read as a broken sign-in. */}
       {sessionError && (
-        <p role="alert" className="text-sm text-red-400">
+        <p role="alert" className="md-body-medium text-error">
           You are signed in, but we could not load your account details.{' '}
           {sessionError}
         </p>
@@ -66,7 +70,7 @@ export function AccountPanel() {
       <button
         type="button"
         onClick={() => void signOut()}
-        className="px-2 py-3 text-slate-500 transition hover:text-slate-400"
+        className="px-2 py-3 text-on-surface-variant transition hover:text-on-surface-variant"
       >
         Sign out
       </button>
