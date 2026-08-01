@@ -29,7 +29,9 @@
     "check:account": "tsx scripts/account-check.ts"
   },
   "dependencies": {
+    "@fastify/compress": "^9.1.0",
     "@fastify/cors": "^10.0.2",
+    "@fastify/helmet": "^13.1.0",
     "@fastify/multipart": "^10.1.0",
     "@fastify/rate-limit": "^10.2.2",
     "@fastify/sensible": "^6.0.3",

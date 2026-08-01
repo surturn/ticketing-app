@@ -18,6 +18,16 @@ import {
 // should not.
 // ---------------------------------------------------------------------------
 
+/**
+ * The fallback for a server-side failure with nothing better to say.
+ *
+ * Deliberately tells the reader what to do rather than what broke. "Something
+ * went wrong on our end" leaves someone mid-purchase with no idea whether to
+ * wait, retry, or give up — and giving up is what they do.
+ */
+const SAFE_5XX_MESSAGE =
+  'Something went wrong on our end. Nothing was charged — please try again in a moment.';
+
 export function registerErrorHandler(app: FastifyInstance): void {
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof AppError) {
@@ -25,11 +35,32 @@ export function registerErrorHandler(app: FastifyInstance): void {
       const log = error.statusCode >= 500 ? request.log.error : request.log.warn;
       log.call(request.log, { err: error, code: error.code }, error.message);
 
+      /**
+       * What actually goes over the wire.
+       *
+       * An explicit `publicMessage` always wins. Otherwise a 4xx sends its
+       * message — those are written for the person who made the request and
+       * describe something they can fix. A 5xx does not: its message is a log
+       * line, and in production it is replaced by something the reader can act
+       * on. Development keeps the detail, because that is when it is useful.
+       *
+       * This is why the gateway's raw response stopped appearing on the
+       * checkout screen: the fix belongs here, once, rather than in every call
+       * site that might one day throw a 503.
+       */
+      const publicMessage =
+        error.publicMessage ??
+        (error.statusCode >= 500 && isProduction
+          ? SAFE_5XX_MESSAGE
+          : error.message);
+
       return reply.status(error.statusCode).send({
         error: {
           code: error.code,
-          message: error.message,
-          details: error.details,
+          message: publicMessage,
+          // Details are Zod issues on a 4xx — safe and useful. On a 5xx they
+          // are whatever a service attached, so they are withheld.
+          details: error.statusCode >= 500 ? undefined : error.details,
           retryable: error.retryable,
         },
       });

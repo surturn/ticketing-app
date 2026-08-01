@@ -47,6 +47,50 @@ export const boundedText = (min: number, max: number) =>
     .refine((value) => value.length <= max, `must be at most ${max} characters`);
 
 /**
+ * Everything `cleanText` removes, except the line breaks.
+ *
+ * `cleanText` is right for a name or a venue: those are one line, and a bare CR
+ * or LF in one becomes a header injection the moment it is interpolated into an
+ * email. It is wrong for a description, where the breaks *are* the content —
+ * running it over an event blurb deleted every paragraph boundary the organiser
+ * typed and glued the last word of one line to the first of the next.
+ *
+ * So line breaks survive here, and nothing else does. A description is only
+ * ever rendered into a page body, never into a header, which is what makes the
+ * distinction safe rather than merely convenient.
+ */
+function cleanMultilineText(value: string): string {
+  return (
+    value
+      .replace(/\r\n?/g, '\n')
+      // The same control range as `CONTROL_CHARS`, with \n carved out.
+      .replace(/[\u0000-\u0009\u000B-\u001F\u007F-\u009F]/g, '')
+      .replace(INVISIBLE_CHARS, '')
+      // Spaces and tabs collapse; newlines do not.
+      .replace(/[^\S\n]+/g, ' ')
+      // Trailing spaces before a break, which paste leaves behind constantly.
+      .replace(/ *\n */g, '\n')
+      // Three or more blank lines is someone's formatting accident, not intent.
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+  );
+}
+
+/**
+ * A multi-line free-text field: cleaned, but with its paragraphs intact.
+ *
+ * Length is checked after cleaning, as above, so a value made entirely of
+ * whitespace is rejected rather than becoming an empty string.
+ */
+export const boundedMultilineText = (min: number, max: number) =>
+  z
+    .string()
+    .max(max * 4, 'unreasonably long')
+    .transform(cleanMultilineText)
+    .refine((value) => value.length >= min, `must be at least ${min} character(s)`)
+    .refine((value) => value.length <= max, `must be at most ${max} characters`);
+
+/**
  * Buyer name. Rejects strings containing no letter at all — "...", "123", a
  * lone emoji — which is the usual shape of a junk submission.
  */

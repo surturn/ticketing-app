@@ -1,3 +1,4 @@
+import { LIMITS } from '../config/rate-limits.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import {
@@ -108,7 +109,7 @@ export async function checkoutRoutes(app: FastifyInstance): Promise<void> {
   // gateway, so it is safe to call on every keystroke of a confirm screen.
   app.post(
     '/api/checkout/preview',
-    { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
+    { config: { rateLimit: LIMITS.checkoutPreview } },
     async (request) => {
       const body = previewBody.parse(request.body);
       return previewCheckout({
@@ -129,7 +130,7 @@ export async function checkoutRoutes(app: FastifyInstance): Promise<void> {
       config: {
         // Tighter than the global limit: this endpoint holds inventory and
         // costs a Daraja call, so it is the one worth protecting from a bot.
-        rateLimit: { max: 10, timeWindow: '1 minute' },
+        rateLimit: LIMITS.checkout,
       },
     },
     async (request, reply) => {
@@ -184,8 +185,20 @@ export async function checkoutRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  app.post('/api/orders/:reference/cancel', async (request) => {
-    const { reference } = referenceParams.parse(request.params);
-    return cancelOrder(reference);
-  });
+  /**
+   * Cancels an unpaid order.
+   *
+   * Authorised by knowing the reference, which is unguessable by design — but
+   * "unguessable" is a claim about how long guessing takes, and an unlimited
+   * endpoint is what turns that from years into an afternoon. The limit is the
+   * thing that makes the reference's entropy actually load-bearing.
+   */
+  app.post(
+    '/api/orders/:reference/cancel',
+    { config: { rateLimit: LIMITS.accountWrite } },
+    async (request) => {
+      const { reference } = referenceParams.parse(request.params);
+      return cancelOrder(reference);
+    },
+  );
 }

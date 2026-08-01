@@ -9,11 +9,27 @@ export class AppError extends Error {
   /** Signals the caller may safely retry — used for lock contention at spike. */
   readonly retryable: boolean;
 
+  /**
+   * What the person on the other end should read, when that differs from
+   * `message`.
+   *
+   * `message` is written for whoever is reading the logs, and for a 4xx that is
+   * usually the same sentence a buyer needs — "that basket is sold out" serves
+   * both. For a 5xx it never is: the useful log line is
+   * `Daraja STK Push failed (404): {"errorCode":"404.001.03"…}`, and putting
+   * that on a checkout screen tells the buyer nothing they can act on while
+   * handing anyone watching the name and version of our payment gateway.
+   *
+   * So the two are separated. The handler sends this when present, logs
+   * `message` either way, and never sends a raw 5xx message in production.
+   */
+  readonly publicMessage: string | undefined;
+
   constructor(
     statusCode: number,
     code: string,
     message: string,
-    options: { details?: unknown; retryable?: boolean } = {},
+    options: { details?: unknown; retryable?: boolean; publicMessage?: string } = {},
   ) {
     super(message);
     this.name = 'AppError';
@@ -21,6 +37,7 @@ export class AppError extends Error {
     this.code = code;
     this.details = options.details;
     this.retryable = options.retryable ?? false;
+    this.publicMessage = options.publicMessage;
   }
 }
 
@@ -48,8 +65,11 @@ export const unprocessable = (code: string, message: string, details?: unknown) 
 export const tooManyRequests = (message = 'Too many requests') =>
   new AppError(429, 'rate_limited', message, { retryable: true });
 
-export const serviceUnavailable = (code: string, message: string) =>
-  new AppError(503, code, message, { retryable: true });
+export const serviceUnavailable = (
+  code: string,
+  message: string,
+  publicMessage?: string,
+) => new AppError(503, code, message, { retryable: true, publicMessage });
 
 /**
  * Postgres raises 55P03 (lock_not_available) / 40P01 (deadlock_detected) when

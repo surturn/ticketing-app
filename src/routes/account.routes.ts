@@ -1,3 +1,4 @@
+import { LIMITS } from '../config/rate-limits.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { TERMS_VERSION, acceptanceIsCurrent } from '../lib/consent.js';
@@ -40,7 +41,7 @@ export async function accountRoutes(app: FastifyInstance): Promise<void> {
     {
       preHandler: requireUser,
       // Tight: one call per sign-in is all a client needs, and this writes.
-      config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+      config: { rateLimit: LIMITS.signIn },
     },
     async (request) => {
       const result = await recordSignIn(request.user!);
@@ -111,7 +112,10 @@ export async function accountRoutes(app: FastifyInstance): Promise<void> {
     return { orders: await getOrdersForUser(request.user!.uid, limit) };
   });
 
-  app.patch('/api/account/me', { preHandler: requireUser }, async (request) => {
+  app.patch(
+    '/api/account/me',
+    { preHandler: requireUser, config: { rateLimit: LIMITS.accountWrite } },
+    async (request) => {
     const body = z
       .object({
         displayName: boundedText(1, 120).optional(),
@@ -145,7 +149,10 @@ export async function accountRoutes(app: FastifyInstance): Promise<void> {
    * Tickets and orders survive; only the profile does. See `deleteAccount` for
    * why that split is deliberate rather than an oversight.
    */
-  app.delete('/api/account/me', { preHandler: requireUser }, async (request, reply) => {
+  app.delete(
+    '/api/account/me',
+    { preHandler: requireUser, config: { rateLimit: LIMITS.accountWrite } },
+    async (request, reply) => {
     await deleteAccount(request.user!.uid);
     request.log.warn({ uid: request.user!.uid }, 'account deleted at user request');
     return reply.status(204).send();
@@ -153,7 +160,7 @@ export async function accountRoutes(app: FastifyInstance): Promise<void> {
 
   app.put(
     '/api/account/announcements',
-    { preHandler: requireUser },
+    { preHandler: requireUser, config: { rateLimit: LIMITS.accountWrite } },
     async (request) => {
       const { optIn } = z
         .object({ optIn: z.boolean() })
@@ -172,7 +179,7 @@ export async function accountRoutes(app: FastifyInstance): Promise<void> {
     {
       // Public and unauthenticated, so it is the most abusable endpoint here:
       // a loose limit turns it into a way to send confirmation mail at strangers.
-      config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
+      config: { rateLimit: LIMITS.subscribe },
     },
     async (request) => {
       const { email } = z

@@ -1,3 +1,4 @@
+import { LIMITS } from '../config/rate-limits.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { getOrderByReference, getOrderStatus } from '../services/orders.service.js';
@@ -16,7 +17,7 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
   app.get(
     '/api/orders/:reference/status',
     {
-      config: { rateLimit: { max: 120, timeWindow: '1 minute' } },
+      config: { rateLimit: LIMITS.orderRead },
     },
     async (request, reply) => {
       const { reference } = referenceParams.parse(request.params);

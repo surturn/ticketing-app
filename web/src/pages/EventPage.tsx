@@ -17,6 +17,7 @@ import {
 } from '@/lib/api';
 import { availabilityLabel, formatEventDate, formatMoney } from '@/lib/format';
 import { useAsync } from '@/lib/useAsync';
+import { RichText } from '@/components/RichText';
 import { useAuth } from '@/auth/AuthProvider';
 import {
   Badge,
@@ -361,9 +362,10 @@ export function EventPage() {
               )}
 
               {event.description && (
-                <p className="md-body-large mt-5 max-w-2xl text-on-surface-variant">
-                  {event.description}
-                </p>
+                <RichText
+                  text={event.description}
+                  className="md-body-large mt-5 max-w-2xl text-on-surface-variant"
+                />
               )}
             </div>
           </div>

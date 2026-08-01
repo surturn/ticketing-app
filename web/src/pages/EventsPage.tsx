@@ -90,7 +90,6 @@ export function EventsPage() {
   const isBrowsing =
     filters.query.trim() === '' && filters.window === 'any' && filters.sort === 'soonest';
   const featured = isBrowsing ? filtered[0] : undefined;
-  const rest = featured ? filtered.slice(1) : filtered;
 
   return (
     <div>
@@ -162,7 +161,13 @@ export function EventsPage() {
             resultCount={filtered.length}
           />
 
-          {rest.length === 0 ? (
+          {/* The empty state keys off `filtered`, not `rest`.
+              Keying it off `rest` meant a single event was promoted into the
+              featured card, leaving the grid empty, and the page then announced
+              "No events match that" directly beneath the event it was
+              displaying. Nothing matching is a statement about the filter, and
+              the filter matched one. */}
+          {filtered.length === 0 ? (
             <EmptyState
               title="No events match that"
               body="Try a different search, or widen the date range."
@@ -176,8 +181,14 @@ export function EventsPage() {
               }
             />
           ) : (
+            /* Every matching event, including the featured one.
+               It used to be sliced out on the grounds that showing it twice is
+               redundant — but the spotlight is a recommendation and the grid is
+               the catalogue, and something missing from the catalogue reads as
+               unavailable. With a single event it also left the grid empty,
+               which is how this surfaced. */
             <div className="grid grid-cols-2 gap-x-5 gap-y-8 sm:grid-cols-3 lg:grid-cols-4">
-              {rest.map((event, index) => (
+              {filtered.map((event, index) => (
                 <EventPoster key={event.id} event={event} index={index} />
               ))}
             </div>

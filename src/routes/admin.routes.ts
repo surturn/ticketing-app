@@ -1,3 +1,6 @@
+import rateLimit from '@fastify/rate-limit';
+import { cacheRedis } from '../lib/redis.js';
+import { LIMITS } from '../config/rate-limits.js';
 import type { FastifyInstance } from 'fastify';
 import { and, count, desc, eq, sql, sum } from 'drizzle-orm';
 import { z } from 'zod';
@@ -18,7 +21,7 @@ import {
   storePoster,
 } from '../lib/storage.js';
 import { logger } from '../lib/logger.js';
-import { boundedText } from '../lib/validation.js';
+import { boundedMultilineText, boundedText } from '../lib/validation.js';
 import { env } from '../config/env.js';
 import { mintScannerToken, requireAdmin } from '../plugins/auth.js';
 import { enqueueEventAnnouncement } from '../queue/queues.js';
@@ -47,7 +50,7 @@ const eventFields = z
       .max(120)
       .regex(/^[a-z0-9-]+$/, 'Use lowercase letters, numbers and hyphens only'),
     name: boundedText(1, 200),
-    description: boundedText(1, 5_000).optional(),
+    description: boundedMultilineText(1, 5_000).optional(),
     venue: boundedText(1, 200).optional(),
     /**
      * The poster, as a URL.
@@ -109,7 +112,7 @@ const eventPatchBody = eventFields.partial().refine(eventDatesOrdered, {
 const tierFields = z
   .object({
     name: boundedText(1, 120),
-    description: boundedText(1, 2_000).optional(),
+    description: boundedMultilineText(1, 2_000).optional(),
     // Bounded above as well as below: a price typo of an extra three zeros is
     // far more likely than a genuine ten-million-shilling ticket, and the
     // multiplication reaching totalCents must stay inside a safe integer.
@@ -162,6 +165,30 @@ const idParams = z.object({ id: z.string().uuid() }).strict();
 export async function adminRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', requireAdmin);
 
+  /**
+   * A scope-wide limit, so every admin route has one without being told.
+   *
+   * Registering the limiter inside this encapsulated plugin makes its settings
+   * the default for the routes declared here, which is what closes the gap:
+   * previously only the two routes that named a limit had one, and the other
+   * twenty inherited the global 240 a minute. A route added tomorrow is covered
+   * by construction rather than by whoever writes it remembering.
+   *
+   * The API key is still the real control. This is what stops a leaked key from
+   * rewriting the catalogue at machine speed before anyone notices.
+   */
+  await app.register(rateLimit, {
+    max: LIMITS.adminWrite.max,
+    timeWindow: LIMITS.adminWrite.timeWindow,
+    redis: cacheRedis,
+    nameSpace: 'ratelimit:admin:',
+    skipOnError: true,
+    keyGenerator: (request) => {
+      const cf = request.headers['cf-connecting-ip'];
+      return (typeof cf === 'string' && cf) || request.ip;
+    },
+  });
+
   // ─── Poster uploads ─────────────────────────────────────────────────────
 
   /**
@@ -182,7 +209,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     {
       config: {
         // Uploads are expensive in bandwidth and storage in a way JSON is not.
-        rateLimit: { max: 20, timeWindow: '1 minute' },
+        rateLimit: LIMITS.upload,
       },
     },
     async (request, reply) => {
@@ -974,7 +1001,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   // full table scan, not a dashboard widget.
   app.post(
     '/api/admin/ledger/verify',
-    { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } },
+    { config: { rateLimit: LIMITS.adminWrite } },
     async (request) => {
       const body = z
         .object({ limit: z.coerce.number().int().min(1).max(1_000_000).optional() })

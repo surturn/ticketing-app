@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   MPESA_B2C_RESULT_PATH,
   MPESA_B2C_TIMEOUT_PATH,
@@ -66,7 +67,29 @@ export function getBaseUrl(): string {
 // A local copy short-circuits the Redis round trip on the hot path.
 // ---------------------------------------------------------------------------
 
-const TOKEN_CACHE_KEY = 'mpesa:oauth-token';
+/**
+ * The token cache key, scoped to the credentials that minted the token.
+ *
+ * It used to be a bare `mpesa:oauth-token`, and that is a real trap: a token is
+ * only valid for the environment and app that issued it, so switching
+ * `MPESA_ENVIRONMENT` from sandbox to production left the *sandbox* token
+ * sitting in Redis, still inside its hour, and every production push was made
+ * with it. Daraja answers that with `404.001.03 Invalid Access Token`, which
+ * names neither the cache nor the environment and sends you looking at your
+ * credentials instead.
+ *
+ * The consumer key is hashed in rather than used directly — it is a credential,
+ * and Redis keys turn up in logs, slow-query output and monitoring. Eight bytes
+ * is ample to separate two apps without carrying the secret around.
+ */
+const TOKEN_CACHE_KEY = (() => {
+  const fingerprint = createHash('sha256')
+    .update(`${env.MPESA_ENVIRONMENT}:${env.MPESA_CONSUMER_KEY ?? ''}`)
+    .digest('hex')
+    .slice(0, 16);
+  return `mpesa:oauth-token:${env.MPESA_ENVIRONMENT}:${fingerprint}`;
+})();
+
 const TOKEN_SAFETY_MARGIN_SECONDS = 120;
 
 let localToken: { value: string; expiresAt: number } | null = null;
@@ -87,6 +110,36 @@ async function fetchWithTimeout(
     throw error;
   } finally {
     clearTimeout(timer);
+  }
+}
+
+/**
+ * Throws away the cached token, in this process and in Redis.
+ *
+ * Called when Daraja rejects a token we believed was current. A token can stop
+ * working before its stated expiry — credentials rotated in the portal, an app
+ * disabled, a cached value that outlived an environment switch — and without
+ * this the whole cache window has to elapse before anything works again. With
+ * it, the next attempt mints a fresh one.
+ */
+/**
+ * Whether a Daraja response means "your token is no good".
+ *
+ * Matched on the error code rather than the status: the status is 404, which on
+ * any other API would mean the endpoint does not exist, and treating it that way
+ * would send someone looking for a typo in a URL that is perfectly correct.
+ */
+export function isInvalidTokenResponse(status: number, body: string): boolean {
+  if (status !== 401 && status !== 404) return false;
+  return /404\.001\.03/.test(body) || /invalid access token/i.test(body);
+}
+
+export async function invalidateAccessToken(): Promise<void> {
+  localToken = null;
+  try {
+    await cacheRedis.del(TOKEN_CACHE_KEY);
+  } catch (error) {
+    logger.warn({ err: error }, 'could not clear the cached Daraja token');
   }
 }
 
@@ -225,24 +278,44 @@ export async function stkPush(params: StkPushParams): Promise<StkPushResponse> {
     TransactionDesc: params.description.slice(0, 13),
   };
 
-  const response = await fetchWithTimeout(
-    `${getBaseUrl()}/mpesa/stkpush/v1/processrequest`,
-    {
+  const send = (bearer: string) =>
+    fetchWithTimeout(`${getBaseUrl()}/mpesa/stkpush/v1/processrequest`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${bearer}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(payload),
-    },
-  );
+    });
 
-  const text = await response.text();
+  let response = await send(token);
+  let text = await response.text();
+
+  /**
+   * One retry, and only for a rejected token.
+   *
+   * Daraja answers a token it does not accept with `404.001.03 Invalid Access
+   * Token`, which is a 404 — the status says "no such thing", the body says
+   * "your credential is stale". A cached token can stop being valid before its
+   * stated expiry, and until that window elapsed every buyer pressing pay saw a
+   * failure for a payment that would have worked a minute later.
+   *
+   * Narrow on purpose: the token is discarded and the push is sent once more.
+   * Anything else is not retried, because a retried push is a second prompt on
+   * somebody's phone and a second chance to be charged.
+   */
+  if (!response.ok && isInvalidTokenResponse(response.status, text)) {
+    logger.warn('Daraja rejected the cached token; minting a new one and retrying');
+    await invalidateAccessToken();
+    response = await send(await getAccessToken());
+    text = await response.text();
+  }
 
   if (!response.ok) {
     throw serviceUnavailable(
       'gateway_error',
       `Daraja STK Push failed (${response.status}): ${text}`,
+      'We could not reach M-Pesa just then. Nothing was charged — please try again.',
     );
   }
 

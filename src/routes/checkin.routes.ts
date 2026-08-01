@@ -1,3 +1,4 @@
+import { LIMITS } from '../config/rate-limits.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { boundedText } from '../lib/validation.js';
@@ -24,7 +25,7 @@ export async function checkInRoutes(app: FastifyInstance): Promise<void> {
     '/api/checkin',
     {
       preHandler: requireScanner,
-      config: { rateLimit: { max: 600, timeWindow: '1 minute' } },
+      config: { rateLimit: LIMITS.checkIn },
     },
     async (request) => {
       const body = checkInBody.parse(request.body);
