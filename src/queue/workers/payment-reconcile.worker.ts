@@ -65,7 +65,10 @@ async function reconcile(paymentId: string, attempt: number): Promise<string> {
     return 'exhausted';
   }
 
-  const report = await applySettlement(result);
+  // `query` provenance: this result came from our own authenticated call to
+  // Daraja a few lines up, so it is already confirmed. Without the flag the
+  // settlement path would ask the same question a second time.
+  const report = await applySettlement(result, { source: 'query' });
   logger.info(
     { paymentId, attempt, outcome: result.outcome, applied: report.applied },
     'payment reconciled via status query',
