@@ -6,6 +6,7 @@
  * belongs with the storefront's own screens; this is the account surface the
  * auth flow needs in order to be complete and demonstrably working.
  */
+import { Button, ButtonLink } from '@/components/ui';
 import { useAuth } from './AuthProvider';
 import { VerifyEmailNotice } from './VerifyEmailNotice';
 
@@ -67,13 +68,20 @@ export function AccountPanel() {
         </p>
       )}
 
-      <button
-        type="button"
-        onClick={() => void signOut()}
-        className="px-2 py-3 text-on-surface-variant transition hover:text-on-surface-variant"
-      >
-        Sign out
-      </button>
+      {/* Settings and sign-out, as real controls.
+          Both were bare text before, which on a phone gave a signed-in buyer no
+          obvious target at all — the two things you can do on this screen have
+          to look like things you can do. Outlined rather than filled: neither
+          is the goal of the page, and §7.5 keeps de-emphasised actions off the
+          filled treatment. */}
+      <div className="flex flex-wrap gap-3 pt-2">
+        <ButtonLink to="/account/settings" variant="outlined">
+          Account settings
+        </ButtonLink>
+        <Button type="button" variant="text" onClick={() => void signOut()}>
+          Sign out
+        </Button>
+      </div>
     </section>
   );
 }

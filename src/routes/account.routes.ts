@@ -8,6 +8,7 @@ import {
   unsubscribe,
 } from '../services/subscribers.service.js';
 import {
+  deleteAccount,
   getOrdersForUser,
   recordSignIn,
   setAnnouncementsOptIn,
@@ -100,6 +101,22 @@ export async function accountRoutes(app: FastifyInstance): Promise<void> {
     return {
       user: { displayName: updated.displayName, phone: updated.phone },
     };
+  });
+
+  /**
+   * Closes the buyer's own account.
+   *
+   * `requireUser` verifies the ID token, so the account being deleted is always
+   * the caller's own — there is no id in the path to tamper with, which is the
+   * simplest way to make this impossible to point at somebody else.
+   *
+   * Tickets and orders survive; only the profile does. See `deleteAccount` for
+   * why that split is deliberate rather than an oversight.
+   */
+  app.delete('/api/account/me', { preHandler: requireUser }, async (request, reply) => {
+    await deleteAccount(request.user!.uid);
+    request.log.warn({ uid: request.user!.uid }, 'account deleted at user request');
+    return reply.status(204).send();
   });
 
   app.put(

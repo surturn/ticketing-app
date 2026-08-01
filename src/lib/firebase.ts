@@ -129,6 +129,26 @@ export async function revokeUserSessions(uid: string): Promise<void> {
   logger.warn({ uid }, 'revoked all sessions for user');
 }
 
+/**
+ * Removes the identity itself, so the account cannot be signed back into.
+ *
+ * Tolerates the user already being absent. Deletion is the one operation a
+ * buyer may well retry after a timeout, and a second attempt failing with
+ * "user not found" would report an error for work that had in fact succeeded.
+ */
+export async function deleteFirebaseUser(uid: string): Promise<void> {
+  try {
+    await getAuth(app()).deleteUser(uid);
+    logger.warn({ uid }, 'deleted Firebase user');
+  } catch (error) {
+    if ((error as { code?: string }).code === 'auth/user-not-found') {
+      logger.info({ uid }, 'Firebase user already absent; nothing to delete');
+      return;
+    }
+    throw error;
+  }
+}
+
 /** Blocks sign-in entirely until re-enabled. */
 export async function setUserDisabled(uid: string, disabled: boolean): Promise<void> {
   await getAuth(app()).updateUser(uid, { disabled });

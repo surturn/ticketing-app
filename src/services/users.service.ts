@@ -1,7 +1,7 @@
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { db, withTransaction } from '../db/client.js';
 import { orders, users, type User } from '../db/schema.js';
-import type { AuthenticatedUser } from '../lib/firebase.js';
+import { deleteFirebaseUser, type AuthenticatedUser } from '../lib/firebase.js';
 import { logger } from '../lib/logger.js';
 import { recordTransition } from './ledger.service.js';
 
@@ -197,4 +197,31 @@ export async function updateProfile(
     .returning();
 
   return updated!;
+}
+
+/**
+ * Closes an account permanently.
+ *
+ * What is removed and what survives is the whole design here, and the two are
+ * not the same thing:
+ *
+ *   - The profile row goes. Name, phone, email, announcement preference — every
+ *     field that exists because the buyer told us about themselves.
+ *   - Orders and tickets stay. `orders.user_id` is declared `on delete set
+ *     null`, so they detach rather than cascade. They are financial records of
+ *     a real transaction, and a ticket that vanished from the gate because
+ *     someone tidied up their account would be a buyer turned away at a door
+ *     they had paid to walk through. The order reference still resolves for
+ *     anyone holding the link.
+ *
+ * The Firebase user is deleted last, and deliberately so. If it were removed
+ * first and the database write then failed, the buyer would be locked out of an
+ * account that still existed — unable to sign in, and unable to ask us to
+ * finish deleting it. This order fails safe: a failure after the row is gone
+ * leaves a Firebase identity with nothing attached, which the next sign-in
+ * simply recreates as a fresh account.
+ */
+export async function deleteAccount(uid: string): Promise<void> {
+  await db.delete(users).where(eq(users.id, uid));
+  await deleteFirebaseUser(uid);
 }

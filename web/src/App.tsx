@@ -68,8 +68,24 @@ const router = createBrowserRouter([
         lazy: async () => ({ Component: (await import('./pages/AccountPage')).AccountPage }),
       },
       {
+        path: '/account/settings',
+        lazy: async () => ({ Component: (await import('./pages/SettingsPage')).SettingsPage }),
+      },
+      {
         path: '/signin',
         lazy: async () => ({ Component: (await import('./pages/SignInPage')).SignInPage }),
+      },
+      // The organiser dashboard. Split out like every other route, which also
+      // means its bundle never ships to a buyer who only came to see one event.
+      {
+        path: '/admin',
+        lazy: async () => ({ Component: (await import('./pages/AdminPage')).AdminPage }),
+      },
+      {
+        path: '/admin/events/:id',
+        lazy: async () => ({
+          Component: (await import('./pages/AdminEventPage')).AdminEventPage,
+        }),
       },
       {
         path: '*',

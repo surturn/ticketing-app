@@ -14,6 +14,14 @@ export class ApiError extends Error {
     readonly code: string,
     message: string,
     readonly retryable = false,
+    /**
+     * The envelope's `details`, when it carries one.
+     *
+     * For a validation failure this is the list of Zod issues, which is what
+     * lets a form put the message against the field that caused it rather than
+     * showing one banner for the whole submission.
+     */
+    readonly details: unknown = null,
   ) {
     super(message);
     this.name = 'ApiError';

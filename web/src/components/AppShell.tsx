@@ -9,18 +9,18 @@ import type { ReactNode } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { useAuth } from '@/auth/AuthProvider';
 import { ThemeToggle } from '@/lib/theme';
-import { ButtonAnchor } from '@/components/ui';
+import { ButtonAnchor, ButtonLink } from '@/components/ui';
 
 function Wordmark() {
   return (
     <Link
       to="/"
-      className="group inline-flex items-center gap-2.5 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
+      className="group inline-flex min-w-0 items-center gap-2.5 overflow-hidden rounded-lg focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
       aria-label="Eventify Tickets — home"
     >
       {/* A ticket stub reduced to its one recognisable feature: the notch. Drawn
           rather than lettered, so it survives at favicon size. */}
-      <svg viewBox="0 0 32 32" className="size-8" aria-hidden="true">
+      <svg viewBox="0 0 32 32" className="size-8 shrink-0" aria-hidden="true">
         <defs>
           <linearGradient id="wordmark" x1="0" y1="0" x2="1" y2="1">
             <stop offset="0%" style={{ stopColor: 'var(--blue-60)' }} />
@@ -45,7 +45,12 @@ function Wordmark() {
         <circle cx="16" cy="21" r="1.6" style={{ fill: 'var(--blue-10)' }} opacity="0.85" />
       </svg>
 
-      <span className="font-display text-lg leading-none font-extrabold tracking-tight text-on-surface">
+      {/* `whitespace-nowrap` is the fix for the two-line wordmark on a phone:
+          without it the flex row happily breaks "Eventify Tickets" in half to
+          make room for the nav, and a broken logotype is the first thing that
+          makes a site look unfinished. It stays on one line and the nav gives
+          way instead. */}
+      <span className="font-display text-lg leading-none font-extrabold tracking-tight whitespace-nowrap text-on-surface">
         Eventify<span className="text-primary"> Tickets</span>
       </span>
     </Link>
@@ -133,13 +138,20 @@ export function AppShell({ children }: { children: ReactNode }) {
           off the main thread — a per-frame layout read is the last thing a
           mid-range Android needs while a poster grid is decoding. */}
       <header className="header-lift sticky top-0 z-40 border-b border-outline-variant/60 bg-surface-container-low">
-        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-4 px-4 sm:h-16 sm:px-6">
+        {/* `gap-2` on a phone, not `gap-4`: four controls plus a wordmark is
+            already tight at 360px, and the wasted gutters were what forced the
+            logotype onto two lines. */}
+        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-2 px-4 sm:h-16 sm:gap-4 sm:px-6">
           <Wordmark />
 
-          <nav className="flex items-center gap-1" aria-label="Main">
+          {/* `shrink-0` so the nav keeps its size and the wordmark truncates
+              instead — the controls are what people came to press. */}
+          <nav className="flex shrink-0 items-center gap-1" aria-label="Main">
             <ThemeToggle />
 
-            <NavLink to="/" end className={navClass}>
+            {/* The wordmark already goes home, so this is redundant on a phone
+                and was costing width the account controls needed. */}
+            <NavLink to="/" end className={`${navClass({ isActive: false })} hidden sm:inline-flex`}>
               Events
             </NavLink>
 
@@ -154,9 +166,14 @@ export function AppShell({ children }: { children: ReactNode }) {
                   </span>
                 </NavLink>
               ) : (
-                <NavLink to="/signin" className={navClass}>
+                // A button, not a text link. Signing in is one of the two things
+                // anyone comes to this bar to do, and rendering it as prose
+                // beside a pill made it read as a caption for the pill.
+                // Tonal rather than filled: it must not out-shout the buy action
+                // on an event page, and §7.5 allows only one filled per view.
+                <ButtonLink to="/signin" variant="tonal" className="h-10 px-4 whitespace-nowrap">
                   Sign in
-                </NavLink>
+                </ButtonLink>
               ))}
 
             {/* The organiser door, and the only gold on a consumer surface: it
@@ -171,7 +188,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <ButtonAnchor
               href="/#host"
               variant="outlined-gold"
-              className="ml-1 h-10 px-3 sm:px-5"
+              className="ml-1 h-10 px-3 whitespace-nowrap sm:px-5"
             >
               <span className="sm:hidden">Host</span>
               <span className="hidden sm:inline">Host an event</span>
