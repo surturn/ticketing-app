@@ -55,7 +55,7 @@ interface Props {
 
 export function ProviderButtons({ onSelect, busy, disabled }: Props) {
   const base =
-    'flex w-full items-center justify-center gap-3 clipped border border-outline-variant ' +
+    'flex w-full items-center justify-center gap-3 trimmed border border-outline-variant ' +
     'bg-surface-container-high px-6 py-3 font-medium text-on-surface-variant transition ' +
     'hover:bg-outline-variant/40 focus-visible:outline-2 focus-visible:outline-offset-2 ' +
     'focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50';

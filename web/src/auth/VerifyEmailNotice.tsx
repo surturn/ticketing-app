@@ -61,7 +61,7 @@ export function VerifyEmailNotice() {
           type="button"
           onClick={check}
           disabled={state === 'checking'}
-          className="clipped border border-outline-variant px-5 py-2 md-label-large text-on-surface-variant transition hover:bg-surface-container-high disabled:opacity-50"
+          className="trimmed border border-outline-variant px-5 py-2 md-label-large text-on-surface-variant transition hover:bg-surface-container-high disabled:opacity-50"
         >
           {state === 'checking' ? 'Checking…' : "I've verified"}
         </button>

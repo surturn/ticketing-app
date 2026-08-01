@@ -17,7 +17,11 @@ function Wordmark() {
   return (
     <Link
       to="/"
-      className="group inline-flex min-w-0 items-center gap-2.5 overflow-hidden rounded-lg focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
+      /* `shrink-0`, and no `overflow-hidden`. Letting it shrink is what produced
+         "Eventify Tic" on a phone — a logotype sliced through a word looks more
+         broken than anything it was making room for. It now keeps its width and
+         the second word is dropped wholesale below `sm` instead. */
+      className="group inline-flex shrink-0 items-center gap-2 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary sm:gap-2.5"
       aria-label="Eventify Tickets — home"
     >
       {/* A ticket stub reduced to its one recognisable feature: the notch. Drawn
@@ -47,13 +51,12 @@ function Wordmark() {
         <circle cx="16" cy="21" r="1.6" style={{ fill: 'var(--blue-10)' }} opacity="0.85" />
       </svg>
 
-      {/* `whitespace-nowrap` is the fix for the two-line wordmark on a phone:
-          without it the flex row happily breaks "Eventify Tickets" in half to
-          make room for the nav, and a broken logotype is the first thing that
-          makes a site look unfinished. It stays on one line and the nav gives
-          way instead. */}
-      <span className="font-display text-lg leading-none font-extrabold tracking-tight whitespace-nowrap text-on-surface">
-        Eventify<span className="text-primary"> Tickets</span>
+      {/* Never wraps and never truncates. Below `sm` the second word is hidden
+          outright rather than sliced — "Eventify" alone is a wordmark, whereas
+          "Eventify Tic" is a rendering bug. */}
+      <span className="font-display text-base leading-none font-extrabold tracking-tight whitespace-nowrap text-on-surface sm:text-lg">
+        Eventify
+        <span className="hidden text-primary sm:inline"> Tickets</span>
       </span>
     </Link>
   );
@@ -61,7 +64,7 @@ function Wordmark() {
 
 function navClass({ isActive }: { isActive: boolean }): string {
   return [
-    'md-label-large clipped clipped-sm px-4 py-2 transition-colors',
+    'md-label-large trimmed px-4 py-2 transition-colors',
     // The current location is stated, not left to be inferred — and stated in
     // blue, the colour this half of the product navigates in. A neutral grey
     // fill said "something is selected" without saying it was a place.
@@ -213,7 +216,15 @@ export function AppShell({ children }: { children: ReactNode }) {
                 // beside a pill made it read as a caption for the pill.
                 // Tonal rather than filled: it must not out-shout the buy action
                 // on an event page, and §7.5 allows only one filled per view.
-                <ButtonLink to="/signin" variant="tonal" className="h-10 px-4 whitespace-nowrap">
+                // 36px and tight padding on a phone, 40 above it. The 48px
+                // floor is for the controls a purchase depends on; a bar with
+                // four items at 48 leaves no room for the wordmark, and this
+                // one is still a comfortable target at 36 because it is wide.
+                <ButtonLink
+                  to="/signin"
+                  variant="tonal"
+                  className="h-9 px-3 text-sm whitespace-nowrap sm:h-10 sm:px-4 sm:text-base"
+                >
                   Sign in
                 </ButtonLink>
               ))}
@@ -230,7 +241,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <ButtonLink
               to="/host"
               variant="outlined-gold"
-              className="ml-1 h-10 px-3 whitespace-nowrap sm:px-5"
+              className="h-9 px-3 text-sm whitespace-nowrap sm:ml-1 sm:h-10 sm:px-5 sm:text-base"
             >
               <span className="sm:hidden">Host</span>
               <span className="hidden sm:inline">Host an event</span>

@@ -83,7 +83,7 @@ export function TicketStub({
 
             {(used || voided) && (
               <span
-                className={`md-label-medium shrink-0 clipped clipped-sm border px-2.5 py-0.5 ${
+                className={`md-label-medium shrink-0 trimmed border px-2.5 py-0.5 ${
                   voided
                     ? 'border-error/40 text-error'
                     : 'border-outline-variant text-on-surface-variant'

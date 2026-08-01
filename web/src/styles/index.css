@@ -644,6 +644,23 @@
   );
 }
 
+/* ---------------------------------------------------------------------------
+   The same silhouette, for anything with a border.
+
+   `clip-path` cuts the element *and its border*, so a bordered control ends up
+   showing a stroke along the four straight edges and nothing at all across the
+   four diagonals — which reads as a broken box rather than a cut one. That is
+   what an outlined button looked like on a phone.
+
+   So a bordered control is not clipped. It takes a small radius instead: two
+   pixels is enough to stop the corner looking accidental and nowhere near
+   enough to read as a pill, which is what the shape change was avoiding. Solid
+   controls keep the chamfer, where there is no stroke to sever.
+   --------------------------------------------------------------------------- */
+@utility trimmed {
+  border-radius: 2px;
+}
+
 .clipped:focus-visible {
   outline: none;
   box-shadow:

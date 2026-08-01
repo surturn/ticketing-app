@@ -90,7 +90,7 @@ export function HelpPage() {
           <ButtonLink to="/account">Find my tickets</ButtonLink>
           <a
             href={`mailto:${CONTACT}?subject=Missing%20ticket`}
-            className="md-state md-label-large clipped inline-flex h-12 items-center justify-center border border-outline px-6 text-on-surface"
+            className="md-state md-label-large trimmed inline-flex h-12 items-center justify-center border border-outline px-6 text-on-surface"
           >
             <span className="md-state-layer" aria-hidden="true" />
             <span className="relative">Email us</span>
@@ -109,7 +109,7 @@ export function HelpPage() {
           <div className="mt-4">
             <Control
               example={
-                <div className="clipped flex items-center gap-1 border border-outline-variant bg-surface p-1">
+                <div className="trimmed flex items-center gap-1 border border-outline-variant bg-surface p-1">
                   <span className="flex size-12 items-center justify-center rounded-full text-lg text-on-surface-variant">
                     −
                   </span>

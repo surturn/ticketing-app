@@ -151,7 +151,7 @@ function Chip({
       /* The pill stays 32px so the row reads as one line of chrome, but the
          `before` pseudo-element widens the hit area to the 48px minimum
          without adding 16px of vertical space to the layout. */
-      className={`md-label-large md-state relative inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 clipped clipped-sm border px-4 whitespace-nowrap transition-colors duration-[--dur-medium] ease-[--ease-standard] before:absolute before:inset-x-0 before:top-1/2 before:h-12 before:-translate-y-1/2 before:content-[''] ${
+      className={`md-label-large md-state relative inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 trimmed border px-4 whitespace-nowrap transition-colors duration-[--dur-medium] ease-[--ease-standard] before:absolute before:inset-x-0 before:top-1/2 before:h-12 before:-translate-y-1/2 before:content-[''] ${
         active
           ? 'border-primary-container bg-primary-container text-on-primary-container'
           : 'border-outline-variant text-on-surface-variant'
@@ -264,7 +264,7 @@ export function EventFilters({
               picker here would be a few kilobytes and several accessibility
               bugs in exchange for matching the chips a little more closely. */}
           <label
-            className={`md-label-large relative inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 clipped clipped-sm border px-3 whitespace-nowrap transition-colors ${
+            className={`md-label-large relative inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 trimmed border px-3 whitespace-nowrap transition-colors ${
               filters.onDate
                 ? 'border-primary-container bg-primary-container text-on-primary-container'
                 : 'border-outline-variant text-on-surface-variant'

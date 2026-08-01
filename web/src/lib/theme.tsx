@@ -112,7 +112,10 @@ export function ThemeToggle() {
       // expecting nothing to happen.
       aria-label={`Switch to ${goingTo} mode`}
       title={`Switch to ${goingTo} mode`}
-      className="flex size-11 cursor-pointer items-center justify-center rounded-full text-on-surface-variant transition hover:bg-surface-container-high hover:text-on-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+      // 36px on a phone so the bar has room for the wordmark and both actions,
+      // 44 above it. An icon-only toggle is the one control here that can give
+      // up width without becoming hard to hit — it has no label to crowd.
+      className="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-on-surface-variant transition hover:bg-tertiary/14 hover:text-on-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary sm:size-11"
     >
       {resolved === 'dark' ? (
         // Currently dark, so offer the sun.
