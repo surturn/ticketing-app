@@ -34,6 +34,25 @@ const csv = z
  */
 export const MPESA_WEBHOOK_PATH = '/api/webhooks/mpesa';
 
+/**
+ * The out-of-band result paths.
+ *
+ * B2C and Reversal are asynchronous in a way STK Push is not: the POST returns
+ * only an acknowledgement, and the actual outcome arrives minutes later on
+ * `ResultURL` — or, if Daraja could not process the request in time, on
+ * `QueueTimeOutURL`. Both must be publicly reachable before either product is
+ * used, because a payout whose result never lands is money that left the
+ * account with nothing recording where it went.
+ *
+ * Separate paths per product rather than one shared endpoint: the payloads are
+ * different shapes, and a single handler branching on `ResultParameters` would
+ * be guessing which product it was looking at.
+ */
+export const MPESA_B2C_RESULT_PATH = '/api/webhooks/mpesa/b2c/result';
+export const MPESA_B2C_TIMEOUT_PATH = '/api/webhooks/mpesa/b2c/timeout';
+export const MPESA_REVERSAL_RESULT_PATH = '/api/webhooks/mpesa/reversal/result';
+export const MPESA_REVERSAL_TIMEOUT_PATH = '/api/webhooks/mpesa/reversal/timeout';
+
 const schema = z.object({
   // ─── Server ──────────────────────────────────────────────────────
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -127,6 +146,49 @@ const schema = z.object({
       return url.protocol === 'https:';
     }, 'must be https — Safaricom will not post to a plain HTTP callback'),
   MPESA_CALLBACK_TOKEN: z.string().optional(),
+
+  // ─── M-Pesa B2C and Reversal ─────────────────────────────────────
+  //
+  // Both are "initiator" products: they move money *out* of the shortcode
+  // rather than into it, and Safaricom gates them behind a separate API user
+  // whose password is never sent in the clear. All optional, so a service that
+  // only takes payments boots without them.
+
+  /** The API operator username created in the Daraja portal, not the shortcode. */
+  MPESA_INITIATOR_NAME: z.string().optional(),
+
+  /**
+   * The initiator's plaintext password.
+   *
+   * Never transmitted. It is RSA-encrypted against Safaricom's public
+   * certificate to produce the `SecurityCredential` field on every request —
+   * see `security-credential.ts`. Held in the platform's secret store like any
+   * other credential that can move money.
+   */
+  MPESA_INITIATOR_PASSWORD: z.string().optional(),
+
+  /**
+   * Path to Safaricom's public certificate used to encrypt the above.
+   *
+   * The sandbox and production certificates are different files, and using the
+   * wrong one produces a credential the far end rejects with an error that does
+   * not mention certificates at all. Defaults to a per-environment path under
+   * `certs/`, which is gitignored — the certificate is downloaded from the
+   * Daraja portal rather than committed.
+   */
+  MPESA_INITIATOR_CERT_PATH: z.string().optional(),
+
+  /**
+   * Command issued for a B2C payout.
+   *
+   * `BusinessPayment` is the correct one for paying an organiser their takings:
+   * it is a business-to-customer transfer with no salary or promotional
+   * semantics attached. The others exist because Safaricom prices and reports
+   * them differently, so this is configuration rather than a constant.
+   */
+  MPESA_B2C_COMMAND: z
+    .enum(['BusinessPayment', 'SalaryPayment', 'PromotionPayment'])
+    .default('BusinessPayment'),
 
   // ─── Firebase (buyer accounts) ───────────────────────────────────
   //
@@ -232,3 +294,43 @@ export const mpesaConfigured = Boolean(
     env.MPESA_PASSKEY &&
     env.MPESA_CALLBACK_URL,
 );
+
+/**
+ * True when the initiator credentials for B2C and Reversal are present.
+ *
+ * Deliberately separate from `mpesaConfigured`. Taking money and sending money
+ * are different permissions with different credentials, and a deployment that
+ * sells tickets should not implicitly gain the ability to move funds out
+ * because someone filled in one more variable.
+ */
+export const mpesaInitiatorConfigured = Boolean(
+  mpesaConfigured && env.MPESA_INITIATOR_NAME && env.MPESA_INITIATOR_PASSWORD,
+);
+
+/**
+ * A public URL for one of this service's M-Pesa webhook paths.
+ *
+ * Built from the origin of `MPESA_CALLBACK_URL` rather than from four more
+ * environment variables. That URL is already validated as https and already
+ * pinned to a path this service actually serves, so reusing its origin means
+ * the result and timeout URLs cannot be pointed somewhere the STK callback is
+ * not — which is the failure that would otherwise be discovered only when a
+ * payout result vanished.
+ *
+ * Carries the same shared-secret token, so all four endpoints authenticate the
+ * same way.
+ */
+export function mpesaWebhookUrl(path: string): string {
+  const configured = env.MPESA_CALLBACK_URL;
+  if (!configured) {
+    throw new Error('MPESA_CALLBACK_URL is not set — cannot derive a result URL');
+  }
+
+  const url = new URL(configured);
+  url.pathname = path;
+  url.search = '';
+  if (env.MPESA_CALLBACK_TOKEN) {
+    url.searchParams.set('token', env.MPESA_CALLBACK_TOKEN);
+  }
+  return url.toString();
+}

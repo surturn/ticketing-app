@@ -1,5 +1,12 @@
 import type { FastifyInstance } from 'fastify';
-import { MPESA_WEBHOOK_PATH } from '../config/env.js';
+import {
+  MPESA_B2C_RESULT_PATH,
+  MPESA_B2C_TIMEOUT_PATH,
+  MPESA_REVERSAL_RESULT_PATH,
+  MPESA_REVERSAL_TIMEOUT_PATH,
+  MPESA_WEBHOOK_PATH,
+} from '../config/env.js';
+import type { InitiatorResultBody } from '../gateways/mpesa/daraja.js';
 import { isValidCallbackToken, mpesaGateway } from '../gateways/mpesa/gateway.js';
 import { applySettlement, recordWebhookDelivery } from '../services/payments.service.js';
 
@@ -91,4 +98,74 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(200).send(ACK);
     },
   );
+
+  // ─── Initiator results: B2C and Reversal ─────────────────────────────────
+  //
+  // The outcome of a payout or a refund, arriving minutes after the request was
+  // accepted. Same two rules as above: always acknowledge, and persist before
+  // acting.
+  //
+  // These are recorded but not yet acted on. Neither product has a domain flow
+  // behind it — there is no payouts table for a B2C result to settle, and no
+  // refund record for a reversal to close — so acting on one would mean
+  // inventing state to write it into. Persisting every delivery means that when
+  // those flows are built the history is already there, and in the meantime a
+  // payout that failed is visible in `webhook_events` rather than lost.
+
+  /**
+   * Registers one result or timeout endpoint.
+   *
+   * The dedupe key is the OriginatorConversationID — the id we minted when
+   * sending the request, and the only value that is stable across a retry.
+   * Safaricom's own ConversationID is not usable for this: it is absent from
+   * some timeout payloads.
+   */
+  function registerInitiatorCallback(path: string, kind: string): void {
+    app.post(path, { config: { rateLimit: false } }, async (request, reply) => {
+      const token = (request.query as { token?: string } | undefined)?.token;
+
+      if (!isValidCallbackToken(token)) {
+        request.log.warn({ ip: request.ip, kind }, 'rejected M-Pesa result with a bad token');
+        return reply.status(200).send(ACK);
+      }
+
+      const body = request.body as Partial<InitiatorResultBody> | undefined;
+      const result = body?.Result;
+
+      // A timeout callback carries no Result envelope at all. Falling back to
+      // the raw body keeps the delivery recorded rather than dropped, which is
+      // the whole point of persisting these.
+      const dedupeKey = result?.OriginatorConversationID
+        ? `${kind}:${result.OriginatorConversationID}`
+        : `${kind}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+
+      request.log.info(
+        {
+          kind,
+          originatorConversationId: result?.OriginatorConversationID,
+          transactionId: result?.TransactionID,
+          resultCode: result?.ResultCode,
+          resultDesc: result?.ResultDesc,
+        },
+        'M-Pesa initiator result received',
+      );
+
+      try {
+        await recordWebhookDelivery(
+          'mpesa',
+          dedupeKey,
+          (request.body ?? {}) as Record<string, unknown>,
+        );
+      } catch (error) {
+        request.log.error({ err: error, kind, dedupeKey }, 'could not record M-Pesa result');
+      }
+
+      return reply.status(200).send(ACK);
+    });
+  }
+
+  registerInitiatorCallback(MPESA_B2C_RESULT_PATH, 'b2c-result');
+  registerInitiatorCallback(MPESA_B2C_TIMEOUT_PATH, 'b2c-timeout');
+  registerInitiatorCallback(MPESA_REVERSAL_RESULT_PATH, 'reversal-result');
+  registerInitiatorCallback(MPESA_REVERSAL_TIMEOUT_PATH, 'reversal-timeout');
 }

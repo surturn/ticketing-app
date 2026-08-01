@@ -1,7 +1,17 @@
-import { env, mpesaPartyB } from '../../config/env.js';
+import {
+  MPESA_B2C_RESULT_PATH,
+  MPESA_B2C_TIMEOUT_PATH,
+  MPESA_REVERSAL_RESULT_PATH,
+  MPESA_REVERSAL_TIMEOUT_PATH,
+  env,
+  mpesaInitiatorConfigured,
+  mpesaPartyB,
+  mpesaWebhookUrl,
+} from '../../config/env.js';
 import { serviceUnavailable } from '../../lib/errors.js';
 import { logger } from '../../lib/logger.js';
 import { cacheRedis } from '../../lib/redis.js';
+import { buildSecurityCredential } from './security-credential.js';
 
 // ---------------------------------------------------------------------------
 // Raw Safaricom Daraja client. Knows nothing about orders or tickets.
@@ -285,4 +295,224 @@ export async function stkQuery(checkoutRequestId: string): Promise<StkQueryRespo
   }
 
   return JSON.parse(text) as StkQueryResponse;
+}
+
+// ---------------------------------------------------------------------------
+// Initiator products — B2C and Reversal
+//
+// Both move money out of the shortcode, and both are asynchronous in a way STK
+// Push is not. The POST returns an acknowledgement only: it says Daraja
+// accepted the instruction, never that it succeeded. The real outcome arrives
+// minutes later on `ResultURL`, or on `QueueTimeOutURL` if Daraja could not
+// process it in time.
+//
+// Treating the acknowledgement as success is the single most expensive mistake
+// available here — it would mark an organiser as paid the instant the request
+// was queued, including when the transfer later fails.
+// ---------------------------------------------------------------------------
+
+/** What Daraja returns immediately from B2C and Reversal. Not an outcome. */
+export interface InitiatorAck {
+  /** Ours, echoed back on the result callback — the only join key we control. */
+  OriginatorConversationID: string;
+  /** Safaricom's id for the same conversation. */
+  ConversationID: string;
+  ResponseCode: string;
+  ResponseDescription: string;
+}
+
+/** One entry from a result callback's parameter bag. */
+export interface ResultParameterItem {
+  Key: string;
+  Value?: string | number;
+}
+
+/**
+ * The body posted to a `ResultURL`.
+ *
+ * `ResultParameters` is a bag of key/value pairs whose contents differ per
+ * product, which is why it is read through `resultParameter` rather than
+ * destructured — a field that is absent for one command must not throw for
+ * another.
+ */
+export interface InitiatorResultBody {
+  Result: {
+    ResultType: number;
+    ResultCode: number;
+    ResultDesc: string;
+    OriginatorConversationID: string;
+    ConversationID: string;
+    TransactionID: string;
+    ResultParameters?: { ResultParameter: ResultParameterItem[] };
+    ReferenceData?: { ReferenceItem: ResultParameterItem | ResultParameterItem[] };
+  };
+}
+
+/** Reads one value out of a result callback's parameter bag, if present. */
+export function resultParameter(
+  body: InitiatorResultBody,
+  key: string,
+): string | number | undefined {
+  const items = body.Result?.ResultParameters?.ResultParameter;
+  if (!Array.isArray(items)) return undefined;
+  return items.find((item) => item.Key === key)?.Value;
+}
+
+/**
+ * Shared POST for the two initiator products.
+ *
+ * Kept together because the failure handling is identical and subtle: a
+ * non-zero `ResponseCode` on the acknowledgement means the instruction was
+ * never queued, which is safe to surface as an error. Anything after that point
+ * is not, because the money may already be moving.
+ */
+async function postInitiatorRequest(
+  path: string,
+  payload: Record<string, unknown>,
+  label: string,
+): Promise<InitiatorAck> {
+  if (!mpesaInitiatorConfigured) {
+    throw serviceUnavailable(
+      'gateway_not_configured',
+      `MPESA_INITIATOR_NAME and MPESA_INITIATOR_PASSWORD must both be set — ` +
+        `${label} cannot be used`,
+    );
+  }
+
+  const token = await getAccessToken();
+
+  const response = await fetchWithTimeout(`${getBaseUrl()}${path}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const text = await response.text();
+
+  if (!response.ok) {
+    throw serviceUnavailable(
+      'gateway_error',
+      `Daraja ${label} failed (${response.status}): ${text}`,
+    );
+  }
+
+  const data = JSON.parse(text) as InitiatorAck;
+
+  if (data.ResponseCode !== '0') {
+    throw serviceUnavailable(
+      'gateway_rejected',
+      `Daraja rejected the ${label}: ${data.ResponseDescription}`,
+    );
+  }
+
+  return data;
+}
+
+export interface B2CParams {
+  /** Recipient MSISDN, 2547XXXXXXXX. */
+  phone: string;
+  /** Whole shillings — Daraja rejects decimals. */
+  amount: number;
+  /**
+   * Our own id for this payout, echoed back on the result callback.
+   *
+   * Must be unique per attempt and is the only key we control on both sides, so
+   * it is what a result is matched against. Without it, two payouts of the same
+   * amount to the same organiser are indistinguishable when their results land.
+   */
+  originatorConversationId: string;
+  remarks: string;
+  occasion?: string;
+}
+
+/**
+ * Pays an organiser out to their M-Pesa number.
+ *
+ * Returns as soon as Daraja accepts the instruction. The caller must treat the
+ * payout as in-flight, not settled, until the result callback arrives.
+ */
+export async function b2cPayment(params: B2CParams): Promise<InitiatorAck> {
+  const payload = {
+    OriginatorConversationID: params.originatorConversationId,
+    InitiatorName: env.MPESA_INITIATOR_NAME,
+    SecurityCredential: buildSecurityCredential(),
+    CommandID: env.MPESA_B2C_COMMAND,
+    Amount: params.amount,
+    // PartyA is the paying shortcode. Not `mpesaPartyB` — that is the Till that
+    // *receives* customer payments, and is frequently a different number.
+    PartyA: env.MPESA_SHORTCODE,
+    PartyB: params.phone,
+    Remarks: params.remarks.slice(0, 100),
+    QueueTimeOutURL: mpesaWebhookUrl(MPESA_B2C_TIMEOUT_PATH),
+    ResultURL: mpesaWebhookUrl(MPESA_B2C_RESULT_PATH),
+    Occasion: (params.occasion ?? '').slice(0, 100),
+  };
+
+  logger.info(
+    {
+      originatorConversationId: params.originatorConversationId,
+      amount: params.amount,
+      command: env.MPESA_B2C_COMMAND,
+    },
+    'initiating M-Pesa B2C payout',
+  );
+
+  return postInitiatorRequest('/mpesa/b2c/v1/paymentrequest', payload, 'B2C payout');
+}
+
+export interface ReversalParams {
+  /**
+   * The M-Pesa receipt of the transaction being reversed, e.g. `SBK1A2B3C4`.
+   *
+   * This is the receipt recorded against the payment, not our order reference.
+   */
+  transactionId: string;
+  /** Whole shillings. Must match the original transaction. */
+  amount: number;
+  originatorConversationId: string;
+  remarks: string;
+  occasion?: string;
+}
+
+/**
+ * Reverses a completed C2B payment, returning the money to the payer.
+ *
+ * `ReceiverParty` is our own shortcode — the money is coming *back out* of it —
+ * and identifier type 11 is Safaricom's code for an organisation shortcode.
+ * Type 4 (organisation) is the value most commonly copied from older examples
+ * and is rejected for reversals.
+ */
+export async function reverseTransaction(
+  params: ReversalParams,
+): Promise<InitiatorAck> {
+  const payload = {
+    OriginatorConversationID: params.originatorConversationId,
+    Initiator: env.MPESA_INITIATOR_NAME,
+    SecurityCredential: buildSecurityCredential(),
+    CommandID: 'TransactionReversal',
+    TransactionID: params.transactionId,
+    Amount: params.amount,
+    ReceiverParty: env.MPESA_SHORTCODE,
+    // Safaricom's own spelling. Correcting it to "Receiver" makes the request
+    // fail validation, so the typo is load-bearing.
+    RecieverIdentifierType: '11',
+    ResultURL: mpesaWebhookUrl(MPESA_REVERSAL_RESULT_PATH),
+    QueueTimeOutURL: mpesaWebhookUrl(MPESA_REVERSAL_TIMEOUT_PATH),
+    Remarks: params.remarks.slice(0, 100),
+    Occasion: (params.occasion ?? '').slice(0, 100),
+  };
+
+  logger.info(
+    {
+      originatorConversationId: params.originatorConversationId,
+      transactionId: params.transactionId,
+      amount: params.amount,
+    },
+    'initiating M-Pesa reversal',
+  );
+
+  return postInitiatorRequest('/mpesa/reversal/v1/request', payload, 'reversal');
 }
