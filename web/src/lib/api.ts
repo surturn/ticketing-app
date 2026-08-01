@@ -150,8 +150,21 @@ export function fetchMyOrders(): Promise<{ orders: AccountOrder[] }> {
 export function updateMyProfile(fields: {
   displayName?: string;
   phone?: string;
+  /** Only `true` is meaningful — consent is withdrawn by closing the account. */
+  acceptTerms?: true;
 }): Promise<{ user: { displayName: string | null; phone: string | null } }> {
   return apiFetch('/api/account/me', { method: 'PATCH', auth: true, body: fields });
+}
+
+/**
+ * Ask to hear about new events.
+ *
+ * Public and unauthenticated, and double opt-in at the far end: this sends a
+ * confirmation the person still has to act on, so nobody is added to a list by
+ * this call alone.
+ */
+export function subscribeToAnnouncements(email: string): Promise<unknown> {
+  return apiFetch('/api/subscribe', { method: 'POST', body: { email } });
 }
 
 // ─── Events ────────────────────────────────────────────────────────────────
@@ -263,6 +276,16 @@ export interface CheckoutBody {
   eventSlug: string;
   items: { tierId: string; quantity: number }[];
   buyer: BuyerDetails;
+  /**
+   * Explicit acceptance of the terms and privacy notice.
+   *
+   * Only sent by the checkout call. The preview endpoint prices a basket and
+   * reserves nothing, so it must stay usable before the buyer has been shown
+   * what they would be agreeing to.
+   */
+  acceptedTerms?: true;
+  /** Separate from the above, and never inferred from it. */
+  marketingOptIn?: boolean;
 }
 
 export interface PreviewResponse {

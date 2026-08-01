@@ -6,7 +6,7 @@
  * costs sales, so there is no cart, no account requirement and no interstitial.
  */
 import { useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   ApiError,
   createCheckout,
@@ -24,6 +24,7 @@ import {
   ButtonAnchor,
   ButtonLink,
   Card,
+  ConsentCheckbox,
   ErrorState,
   Field,
   Skeleton,
@@ -176,6 +177,12 @@ export function EventPage() {
   const [working, setWorking] = useState<'preview' | 'paying' | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
 
+  // Both start false and stay false until tapped. Consent has to be an act the
+  // buyer took, so neither box is ever pre-ticked.
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [marketingOptIn, setMarketingOptIn] = useState(false);
+  const [termsError, setTermsError] = useState<string | null>(null);
+
   const posterVisible = Boolean(event?.posterUrl) && !posterFailed;
 
   /**
@@ -253,11 +260,23 @@ export function EventPage() {
   }
 
   async function handlePay() {
+    if (!acceptedTerms) {
+      setTermsError('Please accept the terms and privacy notice to continue.');
+      return;
+    }
+
     setFailure(null);
+    setTermsError(null);
     setWorking('paying');
     try {
       const order = await createCheckout(
-        { eventSlug: slug, items, buyer },
+        {
+          eventSlug: slug,
+          items,
+          buyer,
+          acceptedTerms: true,
+          marketingOptIn,
+        },
         idempotencyKey,
       );
       // Straight to the order page, which owns the waiting state. The prompt is
@@ -484,6 +503,40 @@ export function EventPage() {
                   {failure}
                 </p>
               )}
+
+              {/* Two boxes, two questions, neither pre-ticked.
+                  Kept separate because they are separate consents: agreeing to
+                  the terms is not agreeing to marketing, and bundling them into
+                  one tick would make both invalid. The order completes
+                  identically whether or not the second is touched — which is
+                  what makes the first freely given rather than the price of a
+                  ticket. */}
+              <div className="mt-6 space-y-3 border-t border-outline-variant pt-5">
+                <ConsentCheckbox
+                  checked={acceptedTerms}
+                  onChange={(next) => {
+                    setAcceptedTerms(next);
+                    if (next) setTermsError(null);
+                  }}
+                  required
+                  error={termsError}
+                >
+                  I agree to the{' '}
+                  <Link to="/terms" className="text-primary underline">
+                    terms of service
+                  </Link>{' '}
+                  and the{' '}
+                  <Link to="/privacy" className="text-primary underline">
+                    privacy notice
+                  </Link>
+                  , and to my details being used to issue and deliver my ticket.
+                </ConsentCheckbox>
+
+                <ConsentCheckbox checked={marketingOptIn} onChange={setMarketingOptIn}>
+                  Email me about upcoming events and flash sales. Optional, and
+                  you can stop at any time.
+                </ConsentCheckbox>
+              </div>
 
               <div className="mt-6">
                 {preview?.chargeable ? (

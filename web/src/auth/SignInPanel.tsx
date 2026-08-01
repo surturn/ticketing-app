@@ -7,6 +7,7 @@
  * different page having lost what they typed.
  */
 import { useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import {
   authErrorMessage,
   isCancellation,
@@ -16,6 +17,8 @@ import {
   signUpWithPassword,
   type ProviderId,
 } from '@/lib/auth';
+import { subscribeToAnnouncements, updateMyProfile } from '@/lib/api';
+import { Button, ConsentCheckbox } from '@/components/ui';
 import { ProviderButtons } from './ProviderButtons';
 
 type Mode = 'signin' | 'signup' | 'reset';
@@ -44,6 +47,11 @@ const field =
 
 export function SignInPanel({ onSignedIn }: { onSignedIn?: () => void }) {
   const [mode, setMode] = useState<Mode>('signin');
+  // Neither pre-ticked. Only asked for on sign-up — signing back in is not a
+  // fresh consent, and re-asking every time would train people to tick without
+  // reading, which is exactly what makes a consent worthless.
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [marketingOptIn, setMarketingOptIn] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -97,7 +105,20 @@ export function SignInPanel({ onSignedIn }: { onSignedIn?: () => void }) {
         );
         setMode('signin');
       } else if (mode === 'signup') {
+        if (!acceptedTerms) {
+          setError('Please accept the terms and privacy notice to create an account.');
+          setSubmitting(false);
+          return;
+        }
         await signUpWithPassword(email, password, displayName);
+        // Recorded after the account exists, because it is written against the
+        // account. Not awaited into the sign-up path and not allowed to fail
+        // it: the consent was given, and a failed write is ours to retry, not
+        // a reason to refuse someone the account they just created.
+        void updateMyProfile({ acceptTerms: true }).catch(() => undefined);
+        if (marketingOptIn) {
+          void subscribeToAnnouncements(email.trim()).catch(() => undefined);
+        }
         onSignedIn?.();
       } else {
         await signInWithPassword(email, password);
@@ -210,13 +231,32 @@ export function SignInPanel({ onSignedIn }: { onSignedIn?: () => void }) {
         )}
         {notice && <p className="md-body-medium text-primary">{notice}</p>}
 
-        <button
-          type="submit"
-          disabled={busy}
-          className="w-full rounded-full bg-primary px-6 py-3 font-medium text-on-surface transition hover:bg-primary hover:shadow-lg hover:shadow-primary-ring focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {submitting ? 'Working…' : copy.submit}
-        </button>
+        {/* Asked once, at the point the account is created. Two boxes because
+            they are two consents: the first is required, the second changes
+            nothing about whether the account can be made. */}
+        {mode === 'signup' && (
+          <div className="space-y-3 border-t border-outline-variant pt-4">
+            <ConsentCheckbox checked={acceptedTerms} onChange={setAcceptedTerms} required>
+              I agree to the{' '}
+              <Link to="/terms" className="text-primary underline">
+                terms of service
+              </Link>{' '}
+              and the{' '}
+              <Link to="/privacy" className="text-primary underline">
+                privacy notice
+              </Link>
+              .
+            </ConsentCheckbox>
+
+            <ConsentCheckbox checked={marketingOptIn} onChange={setMarketingOptIn}>
+              Email me about upcoming events and flash sales. Optional.
+            </ConsentCheckbox>
+          </div>
+        )}
+
+        <Button type="submit" full busy={busy} busyLabel="Working…">
+          {copy.submit}
+        </Button>
       </form>
 
       <div className="md-body-medium mt-6 text-center text-on-surface-variant">

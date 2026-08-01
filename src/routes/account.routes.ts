@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { TERMS_VERSION, acceptanceIsCurrent } from '../lib/consent.js';
 import { boundedText, emailAddress, mpesaPhone } from '../lib/validation.js';
 import { requireUser } from '../plugins/auth.js';
 import {
@@ -11,6 +12,7 @@ import {
   deleteAccount,
   getOrdersForUser,
   recordSignIn,
+  sendWelcomeEmail,
   setAnnouncementsOptIn,
   updateProfile,
 } from '../services/users.service.js';
@@ -43,6 +45,17 @@ export async function accountRoutes(app: FastifyInstance): Promise<void> {
     async (request) => {
       const result = await recordSignIn(request.user!);
 
+      // Once, on the sign-in that created the account. Not awaited and never
+      // allowed to throw: a welcome that failed to send must not turn a
+      // successful sign-in into an error the buyer sees.
+      if (result.created) {
+        void sendWelcomeEmail(result.user.email, result.user.displayName).catch(
+          (error: unknown) => {
+            request.log.warn({ err: error }, 'could not send welcome email');
+          },
+        );
+      }
+
       return {
         user: {
           email: result.user.email,
@@ -53,6 +66,16 @@ export async function accountRoutes(app: FastifyInstance): Promise<void> {
         },
         created: result.created,
         linkedOrders: result.linkedOrders,
+        /**
+         * Whether this account has accepted the terms currently in force.
+         *
+         * False for an account created before consent was captured, and false
+         * again after the notice is revised. The client uses it to prompt, not
+         * to lock anyone out — re-consent is a question, and someone who has
+         * not answered it yet still owns their tickets.
+         */
+        termsAccepted: acceptanceIsCurrent(result.user.termsVersion),
+        termsVersion: TERMS_VERSION,
         // Stated explicitly so a client can prompt for verification: without it,
         // past guest orders stay unclaimed.
         verificationRequiredToLinkOrders: !result.user.emailVerified,
@@ -93,6 +116,15 @@ export async function accountRoutes(app: FastifyInstance): Promise<void> {
       .object({
         displayName: boundedText(1, 120).optional(),
         phone: mpesaPhone.optional(),
+        /**
+         * Accept the current terms and privacy notice.
+         *
+         * Only `true` is meaningful. Consent cannot be withdrawn by sending
+         * `false` here — withdrawal of the terms is closing the account, which
+         * has its own endpoint, and accepting a `false` would quietly erase
+         * evidence of a consent that was genuinely given.
+         */
+        acceptTerms: z.literal(true).optional(),
       })
       .strict()
       .parse(request.body ?? {});

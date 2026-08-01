@@ -491,6 +491,63 @@ export function Badge({
   );
 }
 
+/**
+ * A consent checkbox.
+ *
+ * Never pre-ticked, and that is not a default anyone should change: consent
+ * under the Data Protection Act has to be an act the person took, and a box
+ * that arrives ticked cannot distinguish agreement from not having looked.
+ *
+ * The label is the whole clickable area, and each box carries exactly one
+ * question. Bundling two — "accept the terms and receive offers" — is a single
+ * consent covering two unrelated purposes, and is invalid for that reason.
+ */
+export function ConsentCheckbox({
+  checked,
+  onChange,
+  required = false,
+  error,
+  children,
+}: {
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  required?: boolean;
+  error?: string | null;
+  children: ReactNode;
+}) {
+  return (
+    <div>
+      <label className="flex cursor-pointer items-start gap-3">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(e) => onChange(e.target.checked)}
+          aria-invalid={error ? true : undefined}
+          className={cx(
+            'mt-0.5 size-5 shrink-0 cursor-pointer accent-[var(--md-primary)]',
+            error && 'outline-2 outline-error',
+          )}
+        />
+        <span className="md-body-medium text-on-surface-variant">
+          {children}
+          {required && (
+            <span className="text-error" aria-hidden="true">
+              {' '}
+              *
+            </span>
+          )}
+        </span>
+      </label>
+
+      {error && (
+        <p role="alert" className="md-body-small mt-1.5 ml-8 text-error">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function Skeleton({ className }: { className?: string }) {
   return <div className={cx('skeleton rounded-sm', className)} aria-hidden="true" />;
 }

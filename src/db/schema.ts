@@ -114,8 +114,31 @@ export const users = pgTable(
     /** Optional, and separate from the phone given at checkout. */
     phone: text('phone'),
 
-    /** Whether to send this buyer announcements about new events. */
-    announcementsOptIn: boolean('announcements_opt_in').notNull().default(true),
+    /**
+     * Whether to send this buyer announcements about new events.
+     *
+     * Defaults to false, and that default is the point. Marketing consent under
+     * the Data Protection Act 2019 must be freely given and unambiguous, which
+     * a pre-ticked box is not: consent has to be an act the person took, not a
+     * setting they failed to notice. An account created without anyone asking
+     * therefore starts opted out, and only a deliberate tick moves it.
+     */
+    announcementsOptIn: boolean('announcements_opt_in').notNull().default(false),
+
+    /**
+     * When this buyer accepted the terms and privacy notice, and which version.
+     *
+     * Both columns, not just a boolean. The Act requires being able to
+     * demonstrate that consent was given — a bare `true` cannot show *when* it
+     * happened or *what* was agreed to, so it is unprovable the moment the
+     * wording changes. Recording the version is what makes a later revision a
+     * question you can answer rather than a record you have to trust.
+     *
+     * Nullable because accounts created before this existed genuinely never
+     * agreed to anything, and back-filling a date would be inventing evidence.
+     */
+    termsAcceptedAt: timestamp('terms_accepted_at', { withTimezone: true }),
+    termsVersion: text('terms_version'),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -351,6 +374,21 @@ export const orders = pgTable(
     // reaches here so one person cannot hold two identities on case alone.
     buyerEmail: text('buyer_email').notNull(),
     buyerPhone: text('buyer_phone').notNull(),
+
+    /**
+     * The terms version the buyer accepted when placing this order.
+     *
+     * Recorded per order rather than only per account, because most buyers
+     * never create one — guest checkout is the common path, and consent
+     * attached only to accounts would leave the majority of purchases with no
+     * record at all. Section 32(1) of the Data Protection Act puts the burden
+     * of proving consent on us, and a column on the transaction is the only
+     * place that proof exists for a guest.
+     *
+     * Nullable for orders placed before this was captured. Back-filling a
+     * version would be inventing evidence of something that never happened.
+     */
+    termsVersion: text('terms_version'),
 
     subtotalCents: bigint('subtotal_cents', { mode: 'number' }).notNull(),
     feeCents: bigint('fee_cents', { mode: 'number' }).notNull().default(0),

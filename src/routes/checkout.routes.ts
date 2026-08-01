@@ -6,6 +6,9 @@ import {
   previewCheckout,
 } from '../services/checkout.service.js';
 import { optionalUser } from '../plugins/auth.js';
+import { TERMS_VERSION } from '../lib/consent.js';
+import { badRequest } from '../lib/errors.js';
+import { subscribe } from '../services/subscribers.service.js';
 import {
   boundedMetadata,
   emailAddress,
@@ -50,6 +53,33 @@ const checkoutBody = z
       .regex(/^[a-z0-9-]+$/, 'must be a lowercase slug'),
     items: itemsSchema,
     buyer: buyerSchema,
+
+    /**
+     * Explicit acceptance of the terms and privacy notice, as a literal `true`.
+     *
+     * `z.literal(true)` rather than a boolean: the schema then refuses a `false`
+     * outright instead of accepting it and leaving the route to remember to
+     * check. A client that omits it, or sends anything else, gets a 400 naming
+     * the field. There is no path to a completed order without it.
+     *
+     * Optional at the schema level only so the preview endpoint — which reserves
+     * nothing, charges nothing and exists to price a basket — does not demand
+     * consent before the buyer has been shown what they are consenting to. The
+     * checkout route requires it separately.
+     */
+    acceptedTerms: z.literal(true).optional(),
+
+    /**
+     * Whether the buyer asked to hear about future events.
+     *
+     * Entirely separate from `acceptedTerms`, and never inferred from it.
+     * Section 32(4) of the Act asks whether consent was freely given, taking
+     * into account whether a service was made conditional on consent that is
+     * not necessary to provide it — so this defaults to false, and an order
+     * completes identically either way.
+     */
+    marketingOptIn: z.boolean().default(false),
+
     metadata: boundedMetadata.optional(),
   })
   .strict();
@@ -105,6 +135,15 @@ export async function checkoutRoutes(app: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const body = checkoutBody.parse(request.body);
 
+      // Enforced here rather than in the shared schema, because the preview
+      // endpoint uses the same body and must stay usable before the buyer has
+      // been shown what they would be agreeing to.
+      if (body.acceptedTerms !== true) {
+        throw badRequest(
+          'Please accept the terms and privacy notice to complete your purchase.',
+        );
+      }
+
       // Clients should send a stable Idempotency-Key per basket so a retry on a
       // flaky mobile connection does not reserve the seats twice. Validated
       // rather than trusted: it becomes a unique index value.
@@ -118,10 +157,28 @@ export async function checkoutRoutes(app: FastifyInstance): Promise<void> {
         buyer: body.buyer,
         metadata: body.metadata,
         idempotencyKey,
+        // The version in force at the moment of purchase, so a later revision
+        // cannot retroactively change what this buyer agreed to.
+        termsVersion: TERMS_VERSION,
         // Taken from the verified token, never from the body — a caller must not
         // be able to file an order under somebody else's account.
         userId: request.user?.uid ?? null,
       });
+
+      /**
+       * Marketing consent, recorded after the order rather than before it.
+       *
+       * Deliberately not awaited into the checkout path and deliberately
+       * swallowed: the buyer has paid, and a newsletter signup that failed must
+       * never turn a completed purchase into an error. `subscribe` is
+       * double-opt-in, so this sends a confirmation the buyer still has to act
+       * on — nobody is added to a list by this call alone.
+       */
+      if (body.marketingOptIn) {
+        void subscribe(body.buyer.email, 'checkout').catch((error: unknown) => {
+          request.log.warn({ err: error }, 'could not record marketing opt-in');
+        });
+      }
 
       return reply.status(result.idempotentReplay ? 200 : 201).send(result);
     },

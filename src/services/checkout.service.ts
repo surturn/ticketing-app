@@ -71,6 +71,15 @@ export interface CheckoutInput {
    * supplied.
    */
   userId?: string | null;
+  /**
+   * The terms version the buyer accepted, stamped onto the order.
+   *
+   * Section 32(1) of the Data Protection Act puts the burden of proving consent
+   * on us. Most purchases are guest purchases, so an account-level record would
+   * leave the majority with no proof at all — the transaction is where it has
+   * to live.
+   */
+  termsVersion?: string | null;
 }
 
 export interface CheckoutResult {
@@ -232,6 +241,7 @@ export async function createCheckout(
           status: 'pending',
           reservedUntil,
           idempotencyKey: input.idempotencyKey ?? null,
+          termsVersion: input.termsVersion ?? null,
           metadata: input.metadata ?? null,
         })
         .returning();

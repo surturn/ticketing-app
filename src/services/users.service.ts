@@ -1,6 +1,8 @@
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { db, withTransaction } from '../db/client.js';
 import { orders, users, type User } from '../db/schema.js';
+import { TERMS_VERSION } from '../lib/consent.js';
+import { sendEmail } from '../lib/email.js';
 import { deleteFirebaseUser, type AuthenticatedUser } from '../lib/firebase.js';
 import { logger } from '../lib/logger.js';
 import { recordTransition } from './ledger.service.js';
@@ -188,15 +190,82 @@ export async function setAnnouncementsOptIn(
 
 export async function updateProfile(
   uid: string,
-  fields: { displayName?: string; phone?: string },
+  fields: { displayName?: string; phone?: string; acceptTerms?: true },
 ): Promise<User> {
+  const { acceptTerms, ...profile } = fields;
+
   const [updated] = await db
     .update(users)
-    .set({ ...fields, updatedAt: new Date() })
+    .set({
+      ...profile,
+      // Stamped server-side. A client-supplied timestamp would be evidence the
+      // client controls, which is worth nothing as proof of when consent was
+      // actually given.
+      ...(acceptTerms
+        ? { termsAcceptedAt: new Date(), termsVersion: TERMS_VERSION }
+        : {}),
+      updatedAt: new Date(),
+    })
     .where(eq(users.id, uid))
     .returning();
 
   return updated!;
+}
+
+/**
+ * The welcome, sent once — the first time an account is seen.
+ *
+ * Gated on `created` at the call site rather than on anything here, because
+ * `recordSignIn` runs on *every* sign-in: a welcome that fired each time would
+ * become the thing people filter to spam within a week.
+ *
+ * Not a marketing message, so it does not need announcement consent. It
+ * confirms an account exists, says what it is for, and gives a reply address —
+ * exactly the service message someone who just signed up expects. It carries no
+ * promotion, which is what keeps that true.
+ *
+ * Failures are logged and swallowed by the caller: a sign-in must never fail
+ * because an email did not send.
+ */
+export async function sendWelcomeEmail(
+  email: string,
+  displayName: string | null,
+): Promise<void> {
+  const firstName = displayName?.trim().split(/\s+/)[0];
+  const greeting = firstName ? `Hi ${firstName},` : 'Hi,';
+
+  await sendEmail({
+    to: email,
+    toName: displayName,
+    subject: 'Welcome to Eventify Tickets',
+    text: [
+      greeting,
+      '',
+      'Your account is ready — thank you for joining us.',
+      '',
+      'Everything you buy now lives in one place. Your tickets are here whether',
+      'you change phone, lose the email, or arrive at the gate with no signal,',
+      'and any tickets you bought as a guest with this address have been added',
+      'automatically.',
+      '',
+      'A few things worth knowing:',
+      '',
+      '  - Your tickets are always at eventify under My tickets.',
+      '  - Every ticket still arrives by email as well. Nothing depends on you',
+      '    remembering a password on the night.',
+      '  - We only email you about new events if you have asked us to. You can',
+      '    change that any time in account settings.',
+      '',
+      'If anything ever goes wrong — a ticket that has not arrived, a payment',
+      'that looks wrong, a question about an event — just reply to this email.',
+      'It reaches a person.',
+      '',
+      'See you at the show.',
+      '',
+      'Eventify Tickets',
+      'hello@invonicstechnologies.com',
+    ].join('\n'),
+  });
 }
 
 /**

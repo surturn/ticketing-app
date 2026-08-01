@@ -5,11 +5,13 @@
  * checkout — a buyer who loses their way mid-purchase and finds no way back to
  * the events list abandons the purchase rather than starting over.
  */
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { useAuth } from '@/auth/AuthProvider';
+import { WelcomeModal } from '@/auth/WelcomeModal';
 import { ThemeToggle } from '@/lib/theme';
 import { ButtonLink } from '@/components/ui';
+import { ConsentBanner } from '@/components/ConsentBanner';
 
 function Wordmark() {
   return (
@@ -127,6 +129,29 @@ function Mark({ label }: { label: string }) {
   );
 }
 
+/**
+ * Shows the welcome once, on the sign-in that created the account.
+ *
+ * Lives in the shell rather than on a page so it appears wherever the buyer
+ * happened to sign in from — the account screen, or mid-checkout on an event
+ * page. `created` is only ever true on the session call that made the row, so
+ * no additional flag is needed to stop it recurring.
+ */
+function FirstSignInWelcome() {
+  const { session, user } = useAuth();
+  const [dismissed, setDismissed] = useState(false);
+
+  if (!session?.created || dismissed) return null;
+
+  return (
+    <WelcomeModal
+      name={session.user.displayName ?? user?.displayName ?? null}
+      linkedOrders={session.linkedOrders}
+      onClose={() => setDismissed(true)}
+    />
+  );
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   const { status, user, accountsAvailable } = useAuth();
 
@@ -211,6 +236,9 @@ export function AppShell({ children }: { children: ReactNode }) {
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6 sm:py-12">
         {children}
       </main>
+
+      <ConsentBanner />
+      <FirstSignInWelcome />
 
       {/* The footer does real work rather than holding a copyright line: it is
           the second place an organiser looks for the listing pitch, and the

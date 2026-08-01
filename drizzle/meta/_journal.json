@@ -57,6 +57,13 @@
       "when": 1785441504060,
       "tag": "0007_far_captain_cross",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1785592241662,
+      "tag": "0008_flat_mattie_franklin",
+      "breakpoints": true
     }
   ]
 }
