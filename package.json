@@ -30,9 +30,11 @@
   },
   "dependencies": {
     "@fastify/cors": "^10.0.2",
+    "@fastify/multipart": "^10.1.0",
     "@fastify/rate-limit": "^10.2.2",
     "@fastify/sensible": "^6.0.3",
     "@fastify/static": "^10.1.2",
+    "aws4fetch": "^1.0.20",
     "bullmq": "^5.34.10",
     "drizzle-orm": "^0.38.4",
     "fastify": "^5.2.1",

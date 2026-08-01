@@ -211,6 +211,49 @@ export const createTier = (eventId: string, body: TierInput) =>
 export const updateTier = (tierId: string, body: Partial<TierInput>) =>
   adminFetch<{ tier: AdminTier }>(`/api/admin/tiers/${tierId}`, { method: 'PATCH', body });
 
+export const ACCEPTED_POSTER_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as const;
+export const MAX_POSTER_BYTES = 2 * 1024 * 1024;
+
+/**
+ * Uploads a poster and returns its public URL.
+ *
+ * Not routed through `adminFetch`: that sets a JSON content type and stringifies
+ * the body, and a multipart request must be left alone so the browser can set
+ * its own boundary. The key handling is the same.
+ */
+export async function uploadPoster(file: File): Promise<{ url: string }> {
+  const key = getAdminKey();
+  if (!key) throw new ApiError(401, 'not_signed_in', 'Sign in to continue.');
+
+  const form = new FormData();
+  form.append('file', file);
+
+  let response: Response;
+  try {
+    response = await fetch('/api/admin/uploads/poster', {
+      method: 'POST',
+      headers: { 'x-api-key': key },
+      body: form,
+    });
+  } catch {
+    throw new ApiError(0, 'network_unreachable', 'Upload failed — check your connection.');
+  }
+
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const error = (payload as { error?: Record<string, unknown> } | null)?.error;
+    if (response.status === 401) clearAdminKey();
+    throw new ApiError(
+      response.status,
+      String(error?.code ?? 'unknown'),
+      String(error?.message ?? 'That upload failed.'),
+    );
+  }
+
+  return { url: (payload as { poster: { url: string } }).poster.url };
+}
+
 export const getStats = (eventId: string) =>
   adminFetch<EventStats>(`/api/admin/events/${eventId}/stats`);
 

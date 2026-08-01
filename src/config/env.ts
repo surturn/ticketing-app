@@ -216,6 +216,34 @@ const schema = z.object({
     .enum(['BusinessPayment', 'SalaryPayment', 'PromotionPayment'])
     .default('BusinessPayment'),
 
+  // ─── Cloudflare R2 (poster uploads) ──────────────────────────────
+  //
+  // All optional. Without them the event form still accepts a poster URL typed
+  // in by hand, exactly as before — only uploading from a device is disabled,
+  // and the endpoint says so rather than failing obscurely.
+  R2_ACCOUNT_ID: z.string().optional(),
+  R2_ACCESS_KEY_ID: z.string().optional(),
+  R2_SECRET_ACCESS_KEY: z.string().optional(),
+  R2_BUCKET: z.string().optional(),
+
+  /**
+   * Where the stored objects are publicly readable from.
+   *
+   * A separate value because it is not derivable: it is either the bucket's
+   * r2.dev subdomain or a custom domain, and which one is a deployment choice.
+   * Required to be https for the same reason a typed-in poster URL is — a
+   * browser blocks insecure images on a secure page, and the poster would
+   * simply not appear.
+   */
+  R2_PUBLIC_BASE_URL: z
+    .string()
+    .url('must be an absolute URL')
+    .refine(
+      (value) => value.startsWith('https://'),
+      'must be https — browsers block insecure images on a secure page',
+    )
+    .optional(),
+
   // ─── Firebase (buyer accounts) ───────────────────────────────────
   //
   // Optional. Without these the service runs exactly as before — guest checkout
@@ -312,6 +340,15 @@ export const brevoConfigured = Boolean(env.BREVO_API_KEY && env.BREVO_SENDER_EMA
 
 /** The shortcode funds actually credit — the Till for Buy Goods. */
 export const mpesaPartyB = env.MPESA_PARTY_B || env.MPESA_SHORTCODE;
+
+/** True when posters can be uploaded rather than only linked. */
+export const r2Configured = Boolean(
+  env.R2_ACCOUNT_ID &&
+    env.R2_ACCESS_KEY_ID &&
+    env.R2_SECRET_ACCESS_KEY &&
+    env.R2_BUCKET &&
+    env.R2_PUBLIC_BASE_URL,
+);
 
 /** True when live M-Pesa credentials are present. */
 export const mpesaConfigured = Boolean(

@@ -1,10 +1,12 @@
 import cors from '@fastify/cors';
+import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
 import sensible from '@fastify/sensible';
 import Fastify, { type FastifyBaseLogger, type FastifyInstance } from 'fastify';
 import { env, isProduction } from './config/env.js';
 import { logger } from './lib/logger.js';
 import { cacheRedis } from './lib/redis.js';
+import { MAX_UPLOAD_BYTES } from './lib/storage.js';
 import { registerErrorHandler } from './plugins/error-handler.js';
 import { registerStorefront } from './plugins/storefront.js';
 import { registerRoutes } from './routes/index.js';
@@ -24,6 +26,13 @@ export async function buildServer(): Promise<FastifyInstance> {
   });
 
   await app.register(sensible);
+
+  // Poster uploads. The cap is enforced again while reading the stream, because
+  // this limit truncates rather than rejects — a plugin-truncated file would
+  // otherwise be stored as a valid, broken image.
+  await app.register(multipart, {
+    limits: { fileSize: MAX_UPLOAD_BYTES, files: 1, fields: 4 },
+  });
 
   await app.register(cors, {
     origin: env.CORS_ORIGINS.length > 0 ? env.CORS_ORIGINS : true,

@@ -13,7 +13,14 @@
 import { useEffect, useState } from 'react';
 import { ApiError } from '@/lib/api';
 import { Button } from '@/components/ui';
-import type { AdminEvent, EventInput, EventStatus } from './adminApi';
+import {
+  ACCEPTED_POSTER_TYPES,
+  MAX_POSTER_BYTES,
+  uploadPoster,
+  type AdminEvent,
+  type EventInput,
+  type EventStatus,
+} from './adminApi';
 
 /** Lowercase, hyphenated, no runs — matches the API's `^[a-z0-9-]+$`. */
 export function slugify(value: string): string {
@@ -170,9 +177,43 @@ export function EventForm({
     toLocalInput(existing?.endsAt ?? null, existing?.timezone ?? 'Africa/Nairobi'),
   );
 
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
   useEffect(() => {
     if (!slugTouched) setSlug(slugify(name));
   }, [name, slugTouched]);
+
+  /**
+   * Checks the obvious things before spending the organiser's bandwidth.
+   *
+   * The API validates all of this again from the bytes — these checks exist to
+   * fail a 12MB photo in the same instant it was chosen, rather than after a
+   * minute of uploading on mobile data.
+   */
+  async function handleUpload(file: File) {
+    if (file.size > MAX_POSTER_BYTES) {
+      setUploadError('That image is larger than 2MB. Please use a smaller file.');
+      return;
+    }
+    if (!ACCEPTED_POSTER_TYPES.includes(file.type as (typeof ACCEPTED_POSTER_TYPES)[number])) {
+      setUploadError('Please choose a PNG, JPEG or WebP image.');
+      return;
+    }
+
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const { url } = await uploadPoster(file);
+      setPosterUrl(url);
+    } catch (caught) {
+      setUploadError(
+        caught instanceof ApiError ? caught.message : 'That upload failed. Please try again.',
+      );
+    } finally {
+      setUploading(false);
+    }
+  }
 
   const remote = fieldErrors(error);
   const generalError =
@@ -243,10 +284,54 @@ export function EventForm({
         />
       </Field>
 
+      {/* Upload first, paste second. The organiser has the artwork on the
+          device they are holding; asking for a URL means finding somewhere to
+          host it first, which is a task nobody came here to do. The URL field
+          stays for posters already hosted elsewhere. */}
       <Field
-        label="Poster URL"
-        hint="Must start with https:// — browsers block insecure images on a secure page."
-        error={remote.posterUrl ?? (posterLooksInsecure ? 'Must be an https:// URL.' : undefined)}
+        label="Poster"
+        hint="PNG, JPEG or WebP, up to 2MB. Shown at 4:5 — the crop takes from the bottom."
+        error={uploadError ?? remote.posterUrl ?? undefined}
+      >
+        <div className="flex flex-wrap items-center gap-3">
+          <label
+            className={`md-state md-label-large trimmed inline-flex h-12 cursor-pointer items-center gap-2 border border-outline px-5 text-on-surface ${
+              uploading ? 'pointer-events-none opacity-60' : ''
+            }`}
+          >
+            <span className="md-state-layer" aria-hidden="true" />
+            <span className="relative">
+              {uploading ? 'Uploading…' : posterUrl ? 'Replace image' : 'Choose image'}
+            </span>
+            <input
+              type="file"
+              // Filters the picker only. The API re-checks the bytes, because
+              // this attribute is a hint the browser applies and anyone can
+              // send whatever they like straight to the endpoint.
+              accept={ACCEPTED_POSTER_TYPES.join(',')}
+              className="sr-only"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                // Cleared so choosing the same file twice fires again — after a
+                // failed upload, re-picking it is the obvious retry.
+                e.target.value = '';
+                if (file) void handleUpload(file);
+              }}
+            />
+          </label>
+
+          {posterUrl && !uploading && (
+            <Button type="button" variant="text" onClick={() => setPosterUrl('')}>
+              Remove
+            </Button>
+          )}
+        </div>
+      </Field>
+
+      <Field
+        label="…or paste a URL"
+        hint="For artwork already hosted somewhere. Must start with https://."
+        error={posterLooksInsecure ? 'Must be an https:// URL.' : undefined}
       >
         <input
           value={posterUrl}
@@ -254,7 +339,7 @@ export function EventForm({
           inputMode="url"
           maxLength={2000}
           placeholder="https://…"
-          className={inputClass(Boolean(remote.posterUrl) || posterLooksInsecure)}
+          className={`${inputClass(posterLooksInsecure)} font-data text-sm`}
         />
       </Field>
 
