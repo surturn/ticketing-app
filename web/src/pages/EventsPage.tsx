@@ -15,9 +15,11 @@
  * Events without artwork fall back to the ticket's own language rather than a
  * grey box, so a poster-less event reads as deliberate.
  */
-import { useMemo, useState } from 'react';
-import { fetchEvents } from '@/lib/api';
+import { useEffect, useMemo, useState } from 'react';
+import { fetchEvents, fetchMyOrders, type AccountOrder } from '@/lib/api';
 import { useAsync } from '@/lib/useAsync';
+import { useAuth } from '@/auth/AuthProvider';
+import { selectUpcoming, UpcomingTickets } from '@/components/UpcomingTickets';
 import { EventPoster } from '@/components/EventPoster';
 import { FeaturedEvent } from '@/components/FeaturedEvent';
 import { OrganiserPitch } from '@/components/OrganiserPitch';
@@ -44,8 +46,42 @@ function PosterSkeleton() {
 export function EventsPage() {
   const { data, loading, error, reload } = useAsync(fetchEvents);
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
+  const { status, user, session } = useAuth();
+
+  const signedIn = status === 'signed-in';
+
+  /**
+   * The buyer's own orders, fetched only once they are known to be signed in.
+   *
+   * Deliberately not part of the page's main `useAsync`: a failure here must
+   * not take the event listing down with it. Someone whose orders will not load
+   * should still be able to browse and buy — so this fails quietly to an empty
+   * list, and the personal module simply does not appear.
+   */
+  const [orders, setOrders] = useState<AccountOrder[]>([]);
+
+  useEffect(() => {
+    if (!signedIn) {
+      setOrders([]);
+      return;
+    }
+
+    let cancelled = false;
+    fetchMyOrders()
+      .then((r) => !cancelled && setOrders(r.orders))
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [signedIn]);
 
   const events = data?.events ?? [];
+
+  const upcoming = useMemo(
+    () => (signedIn ? selectUpcoming(orders, events) : []),
+    [signedIn, orders, events],
+  );
   const filtered = useMemo(() => applyFilters(events, filters), [events, filters]);
 
   // The spotlight is the soonest event, and only while the buyer is browsing
@@ -58,9 +94,24 @@ export function EventsPage() {
 
   return (
     <div>
-      <StageHero events={events} />
-
-      <OrganiserPitch />
+      {/* Two homepages, one route.
+          A signed-out visitor who typed the domain is usually deciding where to
+          list, so they get the pitch. A signed-in buyer is not — they already
+          chose. Leading their own home with a sales page aimed at somebody else
+          is what made going back from the account feel like leaving. */}
+      {signedIn ? (
+        <UpcomingTickets
+          tickets={upcoming}
+          name={
+            (session?.user.displayName ?? user?.displayName)?.split(' ')[0] ?? null
+          }
+        />
+      ) : (
+        <>
+          <StageHero events={events} />
+          <OrganiserPitch />
+        </>
+      )}
 
       {/* Discovery starts here. Headed and anchored so the hero's "See what's
           on" has somewhere to land, and so the section is navigable rather than
