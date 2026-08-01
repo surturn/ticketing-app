@@ -1,10 +1,6 @@
-import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
-import path from 'node:path';
 import helmet from '@fastify/helmet';
 import type { FastifyInstance } from 'fastify';
 import { env, isProduction } from '../config/env.js';
-import { logger } from '../lib/logger.js';
 
 // ---------------------------------------------------------------------------
 // Response security headers.
@@ -15,51 +11,7 @@ import { logger } from '../lib/logger.js';
 // legitimately loads.
 // ---------------------------------------------------------------------------
 
-const STOREFRONT_INDEX = path.resolve(process.cwd(), 'web', 'dist', 'index.html');
-
-/**
- * SHA-256 hashes of the inline scripts in the entry document.
- *
- * The storefront has exactly one: the theme bootstrap, which must run before
- * first paint or a light-mode visitor gets a dark flash on every load. It
- * cannot be moved to a file without either that flash or an extra blocking
- * request.
- *
- * So it is allowed by hash rather than by `'unsafe-inline'`. The difference is
- * the whole value of the policy: a hash permits exactly this script and nothing
- * else, whereas `'unsafe-inline'` permits any script an attacker manages to
- * inject, which is the thing being defended against.
- *
- * Computed at boot from the file actually being served, so it cannot drift out
- * of step with the build. Edit the script and the hash follows automatically;
- * hardcode it and the page silently breaks on the next change.
- */
-function inlineScriptHashes(): string[] {
-  if (!existsSync(STOREFRONT_INDEX)) return [];
-
-  const html = readFileSync(STOREFRONT_INDEX, 'utf8');
-  const hashes: string[] = [];
-
-  // Only scripts with no `src` — those are the inline ones.
-  for (const match of html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)) {
-    const body = match[1];
-    if (!body) continue;
-    hashes.push(`'sha256-${createHash('sha256').update(body, 'utf8').digest('base64')}'`);
-  }
-
-  return hashes;
-}
-
 export async function registerSecurityHeaders(app: FastifyInstance): Promise<void> {
-  const scriptHashes = inlineScriptHashes();
-
-  if (scriptHashes.length > 0) {
-    logger.info(
-      { count: scriptHashes.length },
-      'allowing inline storefront scripts by hash',
-    );
-  }
-
   await app.register(helmet, {
     contentSecurityPolicy: {
       useDefaults: false,
@@ -67,14 +19,27 @@ export async function registerSecurityHeaders(app: FastifyInstance): Promise<voi
         defaultSrc: ["'self'"],
 
         /**
-         * Bundled JavaScript, the theme bootstrap by hash, and gstatic.
+         * Bundled JavaScript and two Google origins. No inline scripts at all.
          *
-         * No `'unsafe-inline'` and no `'unsafe-eval'`. gstatic is where the
-         * Firebase Auth widgets load their helpers from during a popup sign-in;
-         * omitting it produces a sign-in that fails only for some providers,
-         * which is a worse bug than the narrow allowance it avoids.
+         * The theme bootstrap used to be inline and allowed by hash. That could
+         * not be made to work: Cloudflare rewrites the document in flight for
+         * browser requests — injecting its analytics beacon, among other things
+         * — so the bytes the server hashed were not the bytes the browser
+         * parsed, and the policy rejected a script that was entirely legitimate.
+         * It lives at `/theme.js` now and needs nothing but `'self'`.
+         *
+         * gstatic and apis.google.com are where the Firebase Auth popup loads
+         * its helpers; omitting them breaks sign-in for some providers only,
+         * which is a worse failure than the narrow allowance avoids.
+         *
+         * `cloudflareinsights.com` is deliberately *not* here. Cloudflare
+         * injects that beacon on its own, and allowing it would make the
+         * privacy notice untrue — it states plainly that we run no third-party
+         * analytics. Blocking it keeps the page working and the notice honest;
+         * turning the feature off in the Cloudflare dashboard removes the
+         * console noise for good.
          */
-        scriptSrc: ["'self'", 'https://www.gstatic.com', 'https://apis.google.com', ...scriptHashes],
+        scriptSrc: ["'self'", 'https://www.gstatic.com', 'https://apis.google.com'],
 
         /**
          * Styles need `'unsafe-inline'`, and this is a considered trade.
@@ -99,8 +64,15 @@ export async function registerSecurityHeaders(app: FastifyInstance): Promise<voi
          */
         imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
 
-        // Self-hosted, so no font CDN needs allowing.
-        fontSrc: ["'self'"],
+        /**
+         * Self-hosted, so no font CDN needs allowing — but `data:` does.
+         *
+         * Vite inlines assets under its size threshold as data URIs, and the
+         * smaller font subsets fall under it. `'self'` alone blocked exactly
+         * those, which is why some weights rendered and others silently fell
+         * back to a system face.
+         */
+        fontSrc: ["'self'", 'data:'],
 
         /**
          * Where the page may send requests. Our own origin, plus the Firebase
