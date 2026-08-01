@@ -150,6 +150,15 @@ export function HelpPage() {
             do anything else.
           </p>
           <p>
+            <strong className="text-on-surface">
+              The prompt says INVONICS TECHNOLOGIES, not Eventify.
+            </strong>{' '}
+            That is us. Invonics Technologies builds and operates Eventify
+            Tickets, and it is the name registered with Safaricom, so it is what
+            M-Pesa shows on the request and on your statement. Nothing has gone
+            wrong.
+          </p>
+          <p>
             <strong className="text-on-surface">The prompt never arrived.</strong>{' '}
             It expires after about a minute. Nothing has been charged and your
             tickets are still held, so start the payment again.

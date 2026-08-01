@@ -330,7 +330,8 @@ export function AppShell({ children }: { children: ReactNode }) {
             </Link>
 
             <p className="md-body-small ml-auto text-on-surface-variant">
-              © {new Date().getFullYear()} Eventify Tickets
+              © {new Date().getFullYear()} Eventify Tickets — built by Invonics
+              Technologies
             </p>
           </div>
         </div>

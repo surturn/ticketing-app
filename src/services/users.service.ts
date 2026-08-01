@@ -1,8 +1,10 @@
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { env } from '../config/env.js';
 import { db, withTransaction } from '../db/client.js';
 import { orders, users, type User } from '../db/schema.js';
 import { TERMS_VERSION } from '../lib/consent.js';
 import { sendEmail } from '../lib/email.js';
+import { renderEmail } from '../lib/email-template.js';
 import { deleteFirebaseUser, type AuthenticatedUser } from '../lib/firebase.js';
 import { logger } from '../lib/logger.js';
 import { recordTransition } from './ledger.service.js';
@@ -238,6 +240,29 @@ export async function sendWelcomeEmail(
     to: email,
     toName: displayName,
     subject: 'Welcome to Eventify Tickets',
+    html: renderEmail({
+      heading: firstName ? `Welcome, ${firstName}` : 'Welcome to Eventify Tickets',
+      intro: [
+        'Your account is ready — thank you for joining us.',
+        'Everything you buy now lives in one place. Your tickets are here whether you change phone, lose the email, or arrive at the gate with no signal.',
+      ],
+      section: {
+        title: 'A few things worth knowing',
+        body: [
+          'Any tickets you bought as a guest with this address have been added automatically.',
+          'Every ticket still arrives by email as well, so nothing depends on you remembering a password on the night.',
+          'We only email you about new events if you have asked us to, and you can change that any time in account settings.',
+        ],
+      },
+      ...(env.PUBLIC_ORDER_BASE_URL
+        ? {
+            action: {
+              label: 'See my tickets',
+              url: `${env.PUBLIC_ORDER_BASE_URL.replace(/\/+$/, '')}/account`,
+            },
+          }
+        : {}),
+    }),
     text: [
       greeting,
       '',

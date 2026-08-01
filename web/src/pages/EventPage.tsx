@@ -567,8 +567,19 @@ export function EventPage() {
                 )}
               </div>
 
+              {/* Said before the prompt arrives, not after.
+                  The STK request on the buyer's phone shows the registered
+                  Safaricom business name, which is Invonics Technologies, not
+                  Eventify. A payment request from a company they have never
+                  heard of is exactly what a scam looks like, and the careful
+                  ones cancel. Naming it here turns a surprise into a
+                  confirmation that the right thing is happening. */}
               <p className="md-body-small mt-3 text-center text-on-surface-variant">
-                No account needed — we email your tickets.
+                The M-Pesa request will show{' '}
+                <span className="md-data-small text-on-surface">
+                  INVONICS TECHNOLOGIES
+                </span>
+                , who operate Eventify. No account needed — we email your tickets.
               </p>
             </>
           )}

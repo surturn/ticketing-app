@@ -4,6 +4,7 @@ import { env } from '../../config/env.js';
 import { db } from '../../db/client.js';
 import { events } from '../../db/schema.js';
 import { sendEmail } from '../../lib/email.js';
+import { renderEmail, type DetailRow, type EmailLayout } from '../../lib/email-template.js';
 import { AppError } from '../../lib/errors.js';
 import { formatMoney } from '../../lib/money.js';
 import { logger } from '../../lib/logger.js';
@@ -25,7 +26,10 @@ import { QUEUE, type NotificationJob } from '../queues.js';
 interface Delivery {
   to: { email: string; phone: string };
   subject: string;
+  /** The plain-text version. Always present, never a second-class citizen. */
   body: string;
+  /** The structured version, rendered into the HTML shell. */
+  layout?: EmailLayout;
 }
 
 async function deliver(delivery: Delivery): Promise<{ sent: boolean }> {
@@ -33,6 +37,10 @@ async function deliver(delivery: Delivery): Promise<{ sent: boolean }> {
     to: delivery.to.email,
     subject: delivery.subject,
     text: delivery.body,
+    // Both parts are sent. A client that prefers text gets the text, and the
+    // text version is also one of the signals a spam filter weighs — an
+    // HTML-only message scores worse than a properly paired one.
+    ...(delivery.layout ? { html: renderEmail(delivery.layout) } : {}),
   });
 
   return { sent: result.sent };
@@ -110,6 +118,29 @@ function eventBlock(order: OrderView): string {
 }
 
 /**
+ * The event and order facts, as rows for the HTML detail block.
+ *
+ * Built from the same values the plain-text block uses, so the two versions of
+ * a message can never disagree about what was paid or when the doors open.
+ */
+function detailRows(order: OrderView, total: string): DetailRow[] {
+  const rows: DetailRow[] = [
+    { label: 'Event', value: order.event.name },
+    { label: 'When', value: formatEventDate(order.event.startsAt) },
+  ];
+  if (order.event.venue) rows.push({ label: 'Venue', value: order.event.venue });
+  rows.push({ label: 'Order', value: order.reference });
+  rows.push({ label: 'Amount', value: total });
+  return rows;
+}
+
+/** The absolute URL of an order, or undefined when no base URL is configured. */
+function orderUrl(order: OrderView): string | undefined {
+  if (!env.PUBLIC_ORDER_BASE_URL) return undefined;
+  return `${env.PUBLIC_ORDER_BASE_URL.replace(/\/+$/, '')}/orders/${order.reference}`;
+}
+
+/**
  * The "new event is on sale" email.
  *
  * Handled before the order-based branches because it is the one notification with
@@ -162,6 +193,22 @@ async function buildAnnouncement(
       `\n\nTickets are first come, first served, and popular events do sell out.` +
       signOff() +
       optOut,
+    layout: {
+      heading: event.name,
+      intro: ['This one just went on sale.'],
+      details: [
+        { label: 'When', value: when },
+        ...(event.venue ? [{ label: 'Venue', value: event.venue }] : []),
+      ],
+      section: {
+        title: 'Worth being quick',
+        body: ['Tickets are first come, first served, and popular events do sell out.'],
+      },
+      ...(base ? { action: { label: 'Get tickets', url: `${base}/events/${event.slug}` } } : {}),
+      footnote: job.unsubscribeToken
+        ? `You are receiving this because you asked to hear about new events. Unsubscribe: ${base}/api/subscribe/unsubscribe/${job.unsubscribeToken}`
+        : 'You are receiving this because you asked to hear about new events. Change that any time in your account settings.',
+    },
   };
 }
 
@@ -197,6 +244,30 @@ async function build(job: NotificationJob): Promise<Delivery | null> {
           `you set off rather than in the queue.` +
           orderLink(order) +
           signOff(),
+        layout: {
+          heading: one ? 'Your ticket is ready' : 'Your tickets are ready',
+          intro: [
+            `Hi ${properName(order.buyer.name)},`,
+            `You're going. ${one ? 'Your ticket is' : 'Your tickets are'} below and on your order page.`,
+          ],
+          details: [
+            ...detailRows(order, total),
+            {
+              label: one ? 'Ticket' : 'Tickets',
+              value: order.tickets.map((t) => `${t.tierName} ${t.code}`).join('  ·  '),
+            },
+          ],
+          section: {
+            title: 'At the door',
+            body: [
+              'Open your order page and show the QR code. Each code admits one person once, so everyone coming with you needs their own.',
+              'The page works without signal once you have opened it. Worth doing before you set off rather than in the queue.',
+            ],
+          },
+          ...(orderUrl(order)
+            ? { action: { label: one ? 'View my ticket' : 'View my tickets', url: orderUrl(order)! } }
+            : {}),
+        },
       };
     }
 
@@ -214,6 +285,23 @@ async function build(job: NotificationJob): Promise<Delivery | null> {
           `You do not need to do anything.` +
           orderLink(order) +
           signOff(),
+        layout: {
+          heading: 'Payment received',
+          intro: [
+            `Hi ${properName(order.buyer.name)},`,
+            'Your payment went through. Thank you.',
+          ],
+          details: detailRows(order, total),
+          section: {
+            title: 'What happens next',
+            body: [
+              `Your ${order.tickets.length === 1 ? 'ticket is' : 'tickets are'} being issued now and will arrive in a separate email within a minute or two. You do not need to do anything.`,
+            ],
+          },
+          ...(orderUrl(order)
+            ? { action: { label: 'View my order', url: orderUrl(order)! } }
+            : {}),
+        },
       };
 
     case 'order-failed':
@@ -235,6 +323,24 @@ async function build(job: NotificationJob): Promise<Delivery | null> {
           `message and the order number above and we will sort it out.` +
           orderLink(order) +
           signOff(),
+        layout: {
+          heading: 'Your order was not completed',
+          intro: [
+            `Hi ${properName(order.buyer.name)},`,
+            'No money has been taken, and your M-Pesa balance is untouched. The order below did not go through.',
+          ],
+          details: [...detailRows(order, total), { label: 'Reason', value: job.reason }],
+          section: {
+            title: 'What to do',
+            body: [
+              'The tickets have gone back on sale, so you can order again from the event page.',
+              'If money did leave your account, send us the M-Pesa message and the order number above and we will sort it out.',
+            ],
+          },
+          ...(orderUrl(order)
+            ? { action: { label: 'Try again', url: orderUrl(order)! } }
+            : {}),
+        },
       };
 
     default:

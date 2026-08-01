@@ -219,6 +219,14 @@ function AwaitingPayment({
           <p className="md-data-medium mt-6 text-on-surface-variant" aria-live="polite">
             Waiting for confirmation…
           </p>
+
+          {/* Repeated here because this is the screen someone is looking at
+              while the unfamiliar name is on their phone. */}
+          <p className="md-body-small mt-4 text-on-surface-variant">
+            The request shows{' '}
+            <span className="md-data-small text-on-surface">INVONICS TECHNOLOGIES</span>,
+            who operate Eventify.
+          </p>
         </>
       )}
 
