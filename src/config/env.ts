@@ -302,7 +302,29 @@ const schema = z.object({
   BREVO_SENDER_NAME: z.string().default('Tickets'),
   // Where buyers are pointed to view their tickets, e.g. https://event.example.com
   // Used to build the order link in receipt emails.
-  PUBLIC_ORDER_BASE_URL: z.string().optional(),
+  /**
+   * Where a buyer's order link points, in emails and on tickets.
+   *
+   * Validated, because an unvalidated one fails in the worst possible place: a
+   * plain `z.string()` accepted `http://localhost:3000` in production, and the
+   * only symptom would have been every confirmation email carrying a link to a
+   * machine the buyer does not have. Nothing throws, nothing is logged, and it
+   * surfaces as people saying their tickets never arrived.
+   *
+   * https is required except against a loopback host, which is what development
+   * legitimately uses. That test is on the host rather than on NODE_ENV so it
+   * cannot be defeated by a deployment that forgot to set the environment.
+   */
+  PUBLIC_ORDER_BASE_URL: z
+    .string()
+    .url('must be an absolute URL, e.g. https://tickets.example.com')
+    .refine((value) => {
+      const { protocol, hostname } = new URL(value);
+      const loopback =
+        hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]';
+      return protocol === 'https:' || loopback;
+    }, 'must be https — a ticket link is opened from an email, and http is rewritten or blocked by mail clients and link scanners')
+    .optional(),
 });
 
 // A commented-out variable and one left blank are the same intent, but Zod sees
