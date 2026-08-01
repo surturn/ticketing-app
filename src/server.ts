@@ -9,6 +9,7 @@ import { logger } from './lib/logger.js';
 import { cacheRedis } from './lib/redis.js';
 import { MAX_UPLOAD_BYTES } from './lib/storage.js';
 import { registerErrorHandler } from './plugins/error-handler.js';
+import { registerFirebaseAuthProxy } from './plugins/firebase-auth-proxy.js';
 import { registerSecurityHeaders } from './plugins/security.js';
 import { registerStorefront } from './plugins/storefront.js';
 import { registerRoutes } from './routes/index.js';
@@ -114,6 +115,12 @@ export async function buildServer(): Promise<FastifyInstance> {
       request.log.warn({ url: request.url }, 'rate limit exceeded');
     },
   });
+
+  // Before the storefront: `/__/auth/*` has no file extension and arrives with
+  // an HTML Accept header, so the SPA fallback would otherwise answer it with
+  // the entry document and the sign-in would hang on a page that is not the
+  // handler.
+  registerFirebaseAuthProxy(app);
 
   // Before the error handler, which needs the reply decorator this adds in order
   // to serve the storefront as the not-found fallback.

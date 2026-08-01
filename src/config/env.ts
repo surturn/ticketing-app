@@ -254,6 +254,28 @@ const schema = z.object({
   // full project admin: keep it in the platform's env store, never in the repo,
   // and treat rotating it as a break-glass procedure.
   FIREBASE_PROJECT_ID: z.string().optional(),
+
+  /**
+   * The Firebase auth domain to forward `/__/auth/*` to, e.g.
+   * `ticketa-9d7e7.firebaseapp.com`.
+   *
+   * Set this and the OAuth handler is served from our own origin instead, so a
+   * buyer signing in sees our domain on Google's consent screen rather than a
+   * Firebase project id they have never heard of. Leave it unset and Firebase
+   * behaves exactly as it does by default.
+   *
+   * Deliberately not derived from `FIREBASE_PROJECT_ID`: turning the proxy on
+   * also requires setting `VITE_FIREBASE_AUTH_DOMAIN` to our host and adding
+   * that host to Firebase's authorised domains. Inferring it would switch on
+   * half an arrangement whose other half lives in a console.
+   */
+  FIREBASE_AUTH_UPSTREAM: z
+    .string()
+    .regex(
+      /^[a-z0-9-]+\.(firebaseapp\.com|web\.app)$/,
+      'must be a Firebase auth domain, e.g. my-project.firebaseapp.com',
+    )
+    .optional(),
   FIREBASE_CLIENT_EMAIL: z.string().email().optional(),
 
   /**
