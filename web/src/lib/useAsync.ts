@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { ApiError } from './api';
 
 /**
  * Loads something, once, with the three states every screen actually needs.
@@ -39,7 +40,22 @@ export function useAsync<T>(
       })
       .catch((caught: unknown) => {
         if (id !== requestId.current) return;
-        setError(caught instanceof Error ? caught.message : 'Something went wrong.');
+        /**
+         * Only an `ApiError` carries a message meant for a buyer to read.
+         *
+         * Anything else is an internal failure whose message was written for a
+         * developer — "Failed to fetch", "Unexpected token < in JSON", a stack
+         * from a library. Rendering those verbatim puts debug output on a
+         * customer's screen and tells them nothing they can act on, so the
+         * generic line stands in and the real error goes to the console where
+         * it belongs.
+         */
+        if (caught instanceof ApiError) {
+          setError(caught.message);
+        } else {
+          console.error('Unhandled load failure', caught);
+          setError('Something went wrong at our end. Please try again.');
+        }
       })
       .finally(() => {
         if (id !== requestId.current) return;

@@ -47,11 +47,32 @@ export async function apiFetch<T>(
 
   if (body !== undefined) finalHeaders.set('Content-Type', 'application/json');
 
-  const response = await fetch(path, {
-    ...init,
-    headers: finalHeaders,
-    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-  });
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      ...init,
+      headers: finalHeaders,
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    });
+  } catch {
+    /**
+     * The request never reached the API: no signal, flight mode, a dropped
+     * connection mid-tunnel, or the server not answering.
+     *
+     * `fetch` rejects with a bare `TypeError` whose message is "Failed to
+     * fetch" — which is the browser talking to a developer, not the product
+     * talking to a buyer. It also names the wrong culprit: it reads as though
+     * the site is broken, when the usual cause is a train going through a
+     * tunnel. Translated here, at the only place that can tell the difference
+     * between "no network" and "the API said no".
+     */
+    throw new ApiError(
+      0,
+      'network_unreachable',
+      'We could not reach the network. Check your connection and try again.',
+      true,
+    );
+  }
 
   if (response.status === 204) return undefined as T;
 
