@@ -47,15 +47,30 @@ function StageLights() {
           <stop offset="60%" style={{ stopColor: 'var(--neutral-99)' }} stopOpacity="0.08" />
           <stop offset="100%" style={{ stopColor: 'var(--neutral-99)' }} stopOpacity="0" />
         </linearGradient>
+        {/* A tungsten wash.
+            Real rigs are not lit in a single colour temperature — a cool key
+            against a warm fill is what stops a stage reading as flat, and it is
+            why a photograph of an all-blue stage looks like a screensaver.
+            Decorative, so it carries no meaning and costs nothing: gold means
+            "organiser" where it labels something, and this labels nothing. */}
+        <linearGradient id="beam-warm" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" style={{ stopColor: 'var(--gold-70)' }} stopOpacity="0.32" />
+          <stop offset="55%" style={{ stopColor: 'var(--gold-80)' }} stopOpacity="0.10" />
+          <stop offset="100%" style={{ stopColor: 'var(--gold-80)' }} stopOpacity="0" />
+        </linearGradient>
         <filter id="haze" x="-30%" y="-30%" width="160%" height="160%">
           <feGaussianBlur stdDeviation="26" />
         </filter>
       </defs>
 
+      {/* Warm on the left, cool through the middle, warm again at the right
+          edge — uneven on purpose. A rig aimed in perfect symmetry reads as
+          wallpaper, and matched colour temperatures read as a gradient. */}
       <g filter="url(#haze)">
-        <polygon points="150,-40 230,-40 470,430 30,430" fill="url(#beam-cool)" />
+        <polygon points="150,-40 230,-40 470,430 30,430" fill="url(#beam-warm)" />
         <polygon points="600,-40 660,-40 810,430 470,430" fill="url(#beam-white)" />
         <polygon points="980,-40 1060,-40 1190,430 830,430" fill="url(#beam-cool)" />
+        <polygon points="1120,-40 1170,-40 1280,430 1040,430" fill="url(#beam-warm)" />
       </g>
     </svg>
   );
@@ -74,18 +89,27 @@ function MarqueeBulbs() {
       className="pointer-events-none absolute inset-x-0 top-0 flex gap-6 overflow-hidden px-2"
       aria-hidden="true"
     >
-      {Array.from({ length: 60 }).map((_, index) => (
-        <span
-          key={index}
-          className="mt-[-4px] size-[7px] shrink-0 rounded-full bg-primary/70"
-          style={{
-            boxShadow: '0 0 8px 2px color-mix(in srgb, var(--blue-60) 45%, transparent)',
-            // Every third bulb is dimmer. Real strips have dead bulbs, and the
-            // irregularity is what stops this reading as a dotted border.
-            opacity: index % 3 === 0 ? 0.35 : 0.9,
-          }}
-        />
-      ))}
+      {Array.from({ length: 60 }).map((_, index) => {
+        // Every fourth bulb is tungsten. A marquee strip is incandescent, not
+        // LED, and a run of identical cool bulbs is the one detail that gives
+        // away a drawing of one. Purely decorative, so the warm tone carries no
+        // organiser meaning here.
+        const warm = index % 4 === 1;
+        const tone = warm ? 'var(--gold-70)' : 'var(--blue-60)';
+        return (
+          <span
+            key={index}
+            className="mt-[-4px] size-[7px] shrink-0 rounded-full"
+            style={{
+              backgroundColor: `color-mix(in srgb, ${tone} 70%, transparent)`,
+              boxShadow: `0 0 8px 2px color-mix(in srgb, ${tone} 45%, transparent)`,
+              // Every third is dimmer. Real strips have dead bulbs, and the
+              // irregularity is what stops this reading as a dotted border.
+              opacity: index % 3 === 0 ? 0.35 : 0.9,
+            }}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -141,7 +165,9 @@ function Ticker({ events }: { events: EventSummary[] }) {
           <span className="md-label-medium tracking-[0.25em] text-on-surface-variant">
             {name}
           </span>
-          <span className="text-primary" aria-hidden="true">
+          {/* Tungsten, matching the bulbs above it — the separator belongs to
+              the marquee rather than to the interface. */}
+          <span className="text-tertiary" aria-hidden="true">
             ●
           </span>
         </span>

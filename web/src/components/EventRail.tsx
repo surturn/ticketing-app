@@ -96,9 +96,16 @@ export function EventRail({
 
   return (
     <section className="mb-12" aria-labelledby="rail-heading">
-      <h2 id="rail-heading" className="md-title-large mb-4">
-        {title}
-      </h2>
+      {/* Gold rule and eyebrow. This rail is a curated pick rather than the
+          full listing, and warmth is how that reads as a recommendation
+          instead of another grid — the same "worth your attention" register
+          gold already carries on a VIP tier or a nearly-sold-out show. */}
+      <div className="mb-4 flex items-center gap-3">
+        <span className="h-5 w-[3px] shrink-0 bg-tertiary" aria-hidden="true" />
+        <h2 id="rail-heading" className="md-title-large">
+          {title}
+        </h2>
+      </div>
 
       {/* Bleeds to the viewport edge so the last card is visibly cut off rather
           than ending flush with the margin — the clipped card is what tells a

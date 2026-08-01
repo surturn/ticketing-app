@@ -33,15 +33,56 @@ function safeEqual(a: string, b: string): boolean {
   return crypto.timingSafeEqual(bufA, bufB);
 }
 
+/**
+ * Whether a verified buyer token belongs to someone on the admin allowlist.
+ *
+ * Three conditions, all required. The allowlist must be configured at all; the
+ * token must have already been verified by Firebase for this project; and the
+ * address must be marked verified by the provider — an unverified one proves
+ * nothing, because anyone can type somebody else's address into a sign-up form
+ * and an allowlist checked against it would hand over the shortcode.
+ */
+function isAllowlistedAdmin(user: AuthenticatedUser): boolean {
+  if (env.ADMIN_EMAILS.length === 0) return false;
+  if (!user.emailVerified || !user.email) return false;
+  return env.ADMIN_EMAILS.includes(user.email.toLowerCase());
+}
+
 export async function requireAdmin(
   request: FastifyRequest,
   _reply: FastifyReply,
 ): Promise<void> {
+  // The API key remains the primary path: it is what the dashboard falls back
+  // to, and what a deployment with no allowlist uses exclusively.
   const provided = request.headers['x-api-key'];
-
-  if (typeof provided !== 'string' || !safeEqual(provided, env.ADMIN_API_KEY)) {
-    throw unauthorized('A valid x-api-key header is required');
+  if (typeof provided === 'string' && safeEqual(provided, env.ADMIN_API_KEY)) {
+    return;
   }
+
+  /**
+   * Otherwise, an allowlisted account signed in as itself.
+   *
+   * Checked second and never in place of signature verification: the token is
+   * put through the same `verifyIdToken` a buyer's is, so a forged or expired
+   * one fails here exactly as it would anywhere else. The allowlist decides
+   * *which* verified identity is an administrator, never whether the identity
+   * is real.
+   */
+  const token = bearerToken(request.headers.authorization);
+  if (token && firebaseConfigured && env.ADMIN_EMAILS.length > 0) {
+    try {
+      const user = await verifyIdToken(token);
+      if (isAllowlistedAdmin(user)) {
+        request.user = user;
+        return;
+      }
+    } catch {
+      // Fall through to the same error an absent credential gets. Saying which
+      // of the two paths failed would tell an attacker which one to work on.
+    }
+  }
+
+  throw unauthorized('A valid x-api-key header, or an admin account, is required');
 }
 
 // ─── Scanner tokens ────────────────────────────────────────────────────────

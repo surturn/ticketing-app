@@ -96,6 +96,32 @@ const schema = z.object({
   SCANNER_JWT_SECRET: z.string().min(32, 'must be at least 32 characters'),
   ADMIN_API_KEY: z.string().min(16, 'must be at least 16 characters'),
 
+  /**
+   * Signed-in accounts that also hold administrative access, by email.
+   *
+   * A convenience for the people who run the product, so they can manage events
+   * from the account they are already signed into rather than pasting a shared
+   * key. Comma-separated, and compared lowercased.
+   *
+   * Two properties make this safe enough to exist. The address must be
+   * *verified* by the identity provider — an unverified one proves nothing,
+   * since anyone can type someone else's address into a sign-up form. And this
+   * grants nothing on its own: it is checked only after a Firebase token has
+   * been cryptographically verified for this project.
+   *
+   * Empty by default. A deployment that does not set it behaves exactly as
+   * before, with the API key as the only way in.
+   */
+  ADMIN_EMAILS: z
+    .string()
+    .optional()
+    .transform((value) =>
+      (value ?? '')
+        .split(',')
+        .map((entry) => entry.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+
   // ─── Checkout ────────────────────────────────────────────────────
   ORDER_HOLD_MINUTES: z.coerce.number().int().positive().default(10),
 

@@ -112,6 +112,14 @@
   --md-tertiary-container: #ffdf9e;
   --md-on-tertiary-container: #241a00;
 
+  /* A quieter gold, for section labels and other chrome.
+     Full-strength tertiary on a footer heading would read as a call to action
+     — gold is the organiser signal, and a heading is not asking anyone to do
+     anything. This is warm enough to tint the page and dull enough not to
+     claim attention. In light mode that is the bronze itself, already muted;
+     the dark value is one tone below the bright gold used for actions. */
+  --md-tertiary-muted: #785b00;
+
   --md-error: #ba1a1a;
   --md-on-error: #ffffff;
   --md-error-container: #ffdad6;
@@ -168,6 +176,10 @@
   --md-tertiary-container: #5a4400;
   --md-on-tertiary-container: #ffdf9e;
 
+  /* One tone below the action gold, so a label reads as warm chrome rather
+     than as something to press. Still clears 7:1 on the dark surface. */
+  --md-tertiary-muted: #d8a700;
+
   --md-error: #ffb4ab;
   --md-on-error: #690005;
   --md-error-container: #93000a;
@@ -213,6 +225,7 @@
   --color-on-secondary-container: var(--md-on-secondary-container);
 
   --color-tertiary: var(--md-tertiary);
+  --color-tertiary-muted: var(--md-tertiary-muted);
   --color-on-tertiary: var(--md-on-tertiary);
   --color-tertiary-container: var(--md-tertiary-container);
   --color-on-tertiary-container: var(--md-on-tertiary-container);
@@ -549,6 +562,29 @@
 }
 .md-state:hover > .md-state-layer {
   opacity: var(--state-hover);
+}
+
+/**
+ * A warm hover, for quiet controls.
+ *
+ * Opt-in via `md-state-warm` rather than applied to every button, and only on
+ * the low-emphasis ones — outlined, text, nav items. A filled button already
+ * carries its own colour, and washing gold over blue would muddy both.
+ *
+ * The state layer normally tints with `currentColor`, which keeps a hover
+ * related to the thing being hovered. Swapping it for gold on these is the one
+ * deliberate exception: it gives the interface a warm response to touch without
+ * gold ever labelling anything, which is what keeps it from competing with the
+ * organiser signal.
+ */
+.md-state-warm:hover > .md-state-layer {
+  background-color: var(--md-tertiary);
+  opacity: 0.14;
+}
+
+.md-state-warm:active > .md-state-layer {
+  background-color: var(--md-tertiary);
+  opacity: 0.2;
 }
 .md-state:focus-visible > .md-state-layer {
   opacity: var(--state-focus);

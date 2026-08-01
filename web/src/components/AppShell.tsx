@@ -65,9 +65,11 @@ function navClass({ isActive }: { isActive: boolean }): string {
     // The current location is stated, not left to be inferred — and stated in
     // blue, the colour this half of the product navigates in. A neutral grey
     // fill said "something is selected" without saying it was a place.
+    // Hovering an inactive item washes it warm; the active one keeps its blue
+    // and does not respond, because it is already where you are.
     isActive
       ? 'bg-primary-container text-on-primary-container'
-      : 'text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface',
+      : 'text-on-surface-variant hover:bg-tertiary/14 hover:text-on-surface',
   ].join(' ');
 }
 
@@ -76,7 +78,10 @@ function navClass({ isActive }: { isActive: boolean }): string {
 function FooterColumn({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div>
-      <h2 className="md-eyebrow text-on-surface-variant">{title}</h2>
+      {/* Muted gold rather than grey. It warms the footer without any of these
+          headings reading as something to press — full-strength tertiary is the
+          organiser signal, and a column label is not asking for anything. */}
+      <h2 className="md-eyebrow text-tertiary-muted">{title}</h2>
       <ul className="mt-4 space-y-2.5">{children}</ul>
     </div>
   );
@@ -259,10 +264,16 @@ export function AppShell({ children }: { children: ReactNode }) {
               </p>
             </div>
 
+            {/* No dashboard link. /admin is reachable by typing it, and the
+                API authorises every request there regardless — but advertising
+                it in the footer of a consumer site invites people to try a door
+                that is not for them, and answers nothing they were asking. */}
             <FooterColumn title="For organisers">
               <FooterLink to="/host">List an event</FooterLink>
               <FooterLink to="/host">Fees and payouts</FooterLink>
-              <FooterLink to="/admin">Your dashboard</FooterLink>
+              <FooterAnchor href="mailto:hello@invonicstechnologies.com">
+                Talk to us
+              </FooterAnchor>
             </FooterColumn>
 
             <FooterColumn title="For buyers">

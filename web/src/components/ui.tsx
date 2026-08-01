@@ -19,6 +19,20 @@ function StateLayer() {
   return <span className="md-state-layer" aria-hidden="true" />;
 }
 
+/**
+ * Variants whose hover washes gold instead of their own colour.
+ *
+ * Only the quiet ones. A filled button already carries a colour, and laying
+ * gold over blue would muddy both — so the warm response is reserved for the
+ * controls that have no fill of their own to defend.
+ */
+const WARM_HOVER: Partial<Record<ButtonVariant, boolean>> = {
+  outlined: true,
+  'outlined-gold': true,
+  text: true,
+  elevated: true,
+};
+
 // ─── Buttons ───────────────────────────────────────────────────────────────
 
 /**
@@ -102,6 +116,7 @@ export function Button({
         // M3's disabled treatment: 12% on-surface fill, 38% on-surface label.
         'disabled:cursor-not-allowed disabled:border-transparent disabled:bg-on-surface/12 disabled:text-on-surface/38 disabled:shadow-none',
         VARIANT[variant],
+        WARM_HOVER[variant] && 'md-state-warm',
         full && 'w-full',
         className,
       )}
@@ -134,6 +149,7 @@ export function ButtonLink({
       className={cx(
         'md-state md-label-large clipped inline-flex h-12 cursor-pointer items-center justify-center gap-2 px-6 transition-colors duration-150',
         VARIANT[variant],
+        WARM_HOVER[variant] && 'md-state-warm',
         className,
       )}
     >
@@ -168,6 +184,7 @@ export function ButtonAnchor({
       className={cx(
         'md-state md-label-large clipped inline-flex h-12 cursor-pointer items-center justify-center gap-2 px-6 transition-colors duration-150',
         VARIANT[variant],
+        WARM_HOVER[variant] && 'md-state-warm',
         className,
       )}
     >
