@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { closeDatabase, db, withTransaction } from '../db/client.js';
-import { events, orderItems, orders, ticketTiers } from '../db/schema.js';
+import { events, orderItems, orders, ticketTiers, tickets } from '../db/schema.js';
 import {
   explainReservationFailure,
   releaseOrder,
@@ -24,6 +24,14 @@ describe.skipIf(!enabled)('inventory concurrency', () => {
   let eventId: string;
 
   beforeEach(async () => {
+    // Deleted parent-last, and `tickets` first of all.
+    //
+    // Without that first line every test in this file failed on its own
+    // cleanup — tickets reference order_items, so removing the items first
+    // violates the foreign key and the suite never reached a single assertion.
+    // These are the tests that prove the tier counters cannot oversell, so
+    // silently failing to run them was worse than not having them.
+    await db.delete(tickets);
     await db.delete(orderItems);
     await db.delete(orders);
     await db.delete(ticketTiers);
