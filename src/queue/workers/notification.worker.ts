@@ -47,16 +47,66 @@ function formatEventDate(date: Date): string {
   }).format(date);
 }
 
+/**
+ * The link to the order, on its own line and labelled.
+ *
+ * On its own line because mail clients wrap and then mangle a URL that shares a
+ * line with prose, and a half-linked ticket URL is a support ticket. Labelled
+ * because "click here" is what every phishing mail says and a named destination
+ * is what a careful reader is looking for.
+ */
 function orderLink(order: OrderView): string {
   if (!env.PUBLIC_ORDER_BASE_URL) return '';
   const base = env.PUBLIC_ORDER_BASE_URL.replace(/\/+$/, '');
-  return `\n\nView your order: ${base}/orders/${order.reference}`;
+  return `\n\nYour order and tickets:\n${base}/orders/${order.reference}`;
 }
 
+// ---------------------------------------------------------------------------
+// House style.
+//
+// Every message is a service email about money or admission, so it is written
+// to be scanned in the two seconds before someone decides whether it is real:
+// what happened, what it concerns, what to do, who sent it. A buyer who cannot
+// answer the last one quickly assumes phishing, and with a ticket link in the
+// body that assumption is the expensive one.
+//
+// Plain text throughout, and deliberately. It renders identically everywhere,
+// survives every client, and — unlike a styled HTML shell — cannot look broken.
+// A broken template is worse for trust than no template at all.
+// ---------------------------------------------------------------------------
+
+const BRAND = 'Eventify Tickets';
+const SUPPORT_EMAIL = 'hello@invonicstechnologies.com';
+
+/** Capitalises a name typed in lower case, so a greeting never looks careless. */
+function properName(raw: string): string {
+  return raw
+    .trim()
+    .split(/\s+/)
+    .map((word) => (word ? word[0]!.toUpperCase() + word.slice(1) : word))
+    .join(' ');
+}
+
+/**
+ * The signature every message closes with.
+ *
+ * The support address is on every one of them. The alternative — a reply-to
+ * nobody reads — is what turns a small problem into a chargeback, because a
+ * buyer who cannot reach anybody goes to their bank instead.
+ */
+function signOff(extra?: string): string {
+  return (
+    `\n\n—\n${BRAND}\n` +
+    `Questions about this order? Reply to this email or write to ${SUPPORT_EMAIL}.` +
+    (extra ? `\n${extra}` : '')
+  );
+}
+
+/** The event, as a labelled block rather than a sentence. */
 function eventBlock(order: OrderView): string {
   const when = formatEventDate(order.event.startsAt);
-  const where = order.event.venue ? `\nVenue: ${order.event.venue}` : '';
-  return `${order.event.name}\nWhen: ${when}${where}`;
+  const where = order.event.venue ? `\n  Venue    ${order.event.venue}` : '';
+  return `  Event    ${order.event.name}\n  When     ${when}${where}`;
 }
 
 /**
@@ -103,12 +153,14 @@ async function buildAnnouncement(
 
   return {
     to: { email: job.email, phone: '' },
-    subject: `Tickets are live: ${event.name}`,
+    subject: `On sale now: ${event.name}`,
     body:
-      `${event.name} just went on sale.\n\n` +
-      `When: ${when}` +
-      (event.venue ? `\nVenue: ${event.venue}` : '') +
+      `${event.name} is on sale.\n\n` +
+      `  When     ${when}` +
+      (event.venue ? `\n  Venue    ${event.venue}` : '') +
       eventLink +
+      `\n\nTickets are first come, first served, and popular events do sell out.` +
+      signOff() +
       optOut,
   };
 }
@@ -123,42 +175,66 @@ async function build(job: NotificationJob): Promise<Delivery | null> {
 
   switch (job.kind) {
     case 'tickets-issued': {
+      const one = order.tickets.length === 1;
       const lines = order.tickets
-        .map((ticket) => `  ${ticket.tierName} — ${ticket.code}`)
+        .map((ticket) => `  ${ticket.tierName.padEnd(16)} ${ticket.code}`)
         .join('\n');
       return {
         to,
-        subject: `Your tickets for ${order.event.name}`,
+        // The event name in the subject, not the reference. It is what someone
+        // searches for months later, and what tells them the mail is theirs.
+        subject: `Your ${one ? 'ticket' : 'tickets'} for ${order.event.name}`,
         body:
-          `Hi ${order.buyer.name},\n\n` +
-          `Order ${order.reference} is confirmed. ${total} paid.\n\n` +
+          `Hi ${properName(order.buyer.name)},\n\n` +
+          `You're going. Here ${one ? 'is your ticket' : 'are your tickets'}.\n\n` +
           `${eventBlock(order)}\n\n` +
-          `Your ticket${order.tickets.length === 1 ? '' : 's'}:\n${lines}\n\n` +
-          `Show the QR code at the gate. Each code admits one person once.` +
-          orderLink(order),
+          `  ${one ? 'Ticket' : 'Tickets'}\n${lines}\n\n` +
+          `  Order    ${order.reference}\n  Paid     ${total}\n\n` +
+          `At the door\n` +
+          `Open the link below and show the QR code. Each code admits one\n` +
+          `person once, so everyone coming with you needs their own. The page\n` +
+          `works without signal once you have opened it — worth doing before\n` +
+          `you set off rather than in the queue.` +
+          orderLink(order) +
+          signOff(),
       };
     }
 
     case 'order-paid':
       return {
         to,
-        subject: `Payment received — ${order.reference}`,
+        subject: `Payment received for ${order.event.name}`,
         body:
-          `Hi ${order.buyer.name},\n\n` +
-          `We've received your ${total} payment for ${order.event.name}.\n` +
-          `Your tickets are being issued and will arrive in a moment.` +
-          orderLink(order),
+          `Hi ${properName(order.buyer.name)},\n\n` +
+          `Your payment went through. Thank you.\n\n` +
+          `${eventBlock(order)}\n\n` +
+          `  Order    ${order.reference}\n  Paid     ${total}\n\n` +
+          `Your ${order.tickets.length === 1 ? 'ticket is' : 'tickets are'} being\n` +
+          `issued now and will arrive in a separate email within a minute or two.\n` +
+          `You do not need to do anything.` +
+          orderLink(order) +
+          signOff(),
       };
 
     case 'order-failed':
       return {
         to,
-        subject: `Payment not completed — ${order.reference}`,
+        subject: `Your order for ${order.event.name} was not completed`,
         body:
-          `Hi ${order.buyer.name},\n\n` +
-          `Your order for ${order.event.name} was not completed.\n\n` +
-          `Reason: ${job.reason}\n\n` +
-          `No money has been taken. You can try again.`,
+          `Hi ${properName(order.buyer.name)},\n\n` +
+          // The reassurance goes first. Someone reading "payment not completed"
+          // wants to know whether they have been charged before anything else,
+          // and burying it under a reason code is how a support ticket starts.
+          `No money has been taken, and your card or M-Pesa balance is\n` +
+          `untouched. The order below did not go through.\n\n` +
+          `${eventBlock(order)}\n\n` +
+          `  Order    ${order.reference}\n  Amount   ${total}\n  Reason   ${job.reason}\n\n` +
+          `What to do\n` +
+          `The tickets have gone back on sale, so you can order again from the\n` +
+          `event page. If money did leave your account, send us the M-Pesa\n` +
+          `message and the order number above and we will sort it out.` +
+          orderLink(order) +
+          signOff(),
       };
 
     default:
