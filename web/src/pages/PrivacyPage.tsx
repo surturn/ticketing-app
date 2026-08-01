@@ -28,7 +28,7 @@ export function PrivacyPage() {
         <p>
           Invonics Technologies is the data controller for personal data
           processed through Eventify Tickets at{' '}
-          <span className="md-data-medium">ticketing.invonicstechnologies.com</span>.
+          <span className="md-data-medium">eventify.invonicstechnologies.com</span>.
         </p>
         <p>
           For any question about this notice, or to exercise any right described
