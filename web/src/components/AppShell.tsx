@@ -95,6 +95,7 @@ function FooterLink({ to, children }: { to: string; children: ReactNode }) {
   );
 }
 
+/** For destinations outside the router — a mailto, or another site. */
 function FooterAnchor({ href, children }: { href: string; children: ReactNode }) {
   return (
     <li>
@@ -267,8 +268,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             <FooterColumn title="For buyers">
               <FooterLink to="/">Browse events</FooterLink>
               <FooterLink to="/account">Find my tickets</FooterLink>
-              <FooterAnchor href="mailto:support@eventify.co.ke">
-                Get help
+              <FooterLink to="/help">Get help</FooterLink>
+              <FooterAnchor href="mailto:hello@invonicstechnologies.com">
+                Email us
               </FooterAnchor>
             </FooterColumn>
 

@@ -76,9 +76,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // would keep an unlinked account until their next sign-in.
   const announced = useRef<string | null>(null);
 
-  const announce = useCallback(async (current: User) => {
+  /**
+   * `force` re-announces even when the key is unchanged.
+   *
+   * The key exists to stop the token listener re-announcing on every token
+   * refresh, which is the right guard for the automatic path. It is the wrong
+   * guard for a deliberate one: editing a display name changes neither the uid
+   * nor the verification state, so a caller asking for fresh account data was
+   * silently handed the copy fetched at sign-in. That is why saved profile
+   * edits appeared to do nothing — the write landed, and nothing ever re-read
+   * it.
+   */
+  const announce = useCallback(async (current: User, force = false) => {
     const key = `${current.uid}:${current.emailVerified}`;
-    if (announced.current === key) return;
+    if (!force && announced.current === key) return;
     announced.current = key;
 
     try {
@@ -130,7 +141,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await current.getIdToken(true);
 
     setUser(firebaseAuth().currentUser);
-    await announce(firebaseAuth().currentUser!);
+    // Forced: `refresh` is only ever called deliberately — after saving a
+    // profile, or while waiting on a verification — and in both cases the
+    // caller wants the server's current answer, not a cached one.
+    await announce(firebaseAuth().currentUser!, true);
   }, [announce]);
 
   const signOut = useCallback(async () => {

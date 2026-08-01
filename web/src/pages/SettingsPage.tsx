@@ -9,7 +9,7 @@
  * here would silently detach a buyer from tickets they had already bought. It
  * belongs to the sign-in provider, and that is where it should change.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ApiError, apiFetch, updateMyProfile } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
@@ -113,7 +113,7 @@ function DeleteAccount() {
 }
 
 export function SettingsPage() {
-  const { status, user, session, accountsAvailable } = useAuth();
+  const { status, user, session, accountsAvailable, refresh } = useAuth();
   const navigate = useNavigate();
 
   const [name, setName] = useState('');
@@ -124,10 +124,24 @@ export function SettingsPage() {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /**
+   * Seed the form from the session once, the first time it arrives.
+   *
+   * Not on every change. The session is re-announced after a save and on
+   * verification changes, and an effect that reseeded each time would wipe
+   * whatever the person had half-typed the moment any of those fired. After a
+   * save the fields already hold what was sent, so there is nothing to reseed.
+   */
+  const seeded = useRef(false);
+
   useEffect(() => {
-    setName(session?.user.displayName ?? user?.displayName ?? '');
-    setPhone(session?.user.phone ?? '');
-    setOptIn(session?.user.announcementsOptIn ?? true);
+    if (seeded.current || !session) return;
+    seeded.current = true;
+    setName(session.user.displayName ?? user?.displayName ?? '');
+    setPhone(session.user.phone ?? '');
+    // Defaults to false, matching the column: announcements are opt-in, and a
+    // form that arrived pre-ticked would misreport someone's actual setting.
+    setOptIn(session.user.announcementsOptIn ?? false);
   }, [session, user]);
 
   useEffect(() => {
@@ -163,6 +177,18 @@ export function SettingsPage() {
         auth: true,
         body: { optIn },
       });
+
+      /**
+       * Re-announce the session so the rest of the app sees the change.
+       *
+       * Without this the write lands but nothing re-reads it: the provider is
+       * still holding the session fetched at sign-in, so the header keeps the
+       * old first name, the account panel keeps the old details, and coming
+       * back to this page repopulates the fields from the stale copy. From the
+       * outside that is indistinguishable from the save having failed —
+       * which is exactly how it was reported.
+       */
+      await refresh();
       setSaved(true);
     } catch (caught) {
       setError(

@@ -95,6 +95,10 @@ const router = createBrowserRouter([
         lazy: lazyRoute('host', () => import('./pages/HostPage'), (m) => m.HostPage),
       },
       {
+        path: '/help',
+        lazy: lazyRoute('help', () => import('./pages/HelpPage'), (m) => m.HelpPage),
+      },
+      {
         path: '/privacy',
         lazy: lazyRoute('privacy', () => import('./pages/PrivacyPage'), (m) => m.PrivacyPage),
       },
