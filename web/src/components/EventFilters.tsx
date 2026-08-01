@@ -18,13 +18,35 @@ export interface FilterState {
   query: string;
   window: DateWindow;
   sort: SortOrder;
+  /**
+   * A specific day, as `YYYY-MM-DD`, or empty for none.
+   *
+   * Held as the calendar's own string rather than a Date. Parsing it to a Date
+   * here would anchor it to the browser's zone, and "Saturday" to someone
+   * picking a date means the day as written, not an instant that shifts by a
+   * few hours depending on where they are standing.
+   */
+  onDate: string;
 }
 
 export const DEFAULT_FILTERS: FilterState = {
   query: '',
   window: 'any',
   sort: 'soonest',
+  onDate: '',
 };
+
+/** The event's calendar day *in its own time zone*, as `YYYY-MM-DD`. */
+function eventDay(event: EventSummary): string {
+  // `en-CA` formats as YYYY-MM-DD, which is the same shape the date input uses
+  // — so the comparison is a string equality rather than date arithmetic.
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: event.timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(event.startsAt));
+}
 
 /** Saturday and Sunday of the current week, in local time. */
 function weekendBounds(now = new Date()): [Date, Date] {
@@ -57,7 +79,12 @@ export function applyFilters(
       if (!haystack.includes(needle)) return false;
     }
 
-    if (filters.window !== 'any') {
+    // A picked day wins over the window chips: it is the more specific answer,
+    // and honouring both would let "This weekend" silently empty a search for
+    // a Tuesday.
+    if (filters.onDate) {
+      if (eventDay(event) !== filters.onDate) return false;
+    } else if (filters.window !== 'any') {
       const starts = new Date(event.startsAt);
       if (filters.window === 'weekend') {
         const [from, to] = weekendBounds();
@@ -83,6 +110,17 @@ export function applyFilters(
     }
     return new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime();
   });
+}
+
+/** `2026-09-25` as `Fri 25 Sep`, parsed as a plain calendar day. */
+function formatPickedDay(value: string): string {
+  const [year, month, day] = value.split('-').map(Number);
+  if (!year || !month || !day) return value;
+  return new Intl.DateTimeFormat('en-KE', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  }).format(new Date(year, month - 1, day));
 }
 
 const WINDOWS: { value: DateWindow; label: string }[] = [
@@ -213,6 +251,65 @@ export function EventFilters({
               {option.label}
             </Chip>
           ))}
+
+          <span
+            className="mx-1 h-5 w-px shrink-0 bg-outline-variant"
+            aria-hidden="true"
+          />
+
+          {/* A specific day.
+              Native `type="date"`, not a hand-built calendar: it is the control
+              every phone already knows how to open, it is keyboard accessible
+              and localised for free, and it costs nothing to ship. A custom
+              picker here would be a few kilobytes and several accessibility
+              bugs in exchange for matching the chips a little more closely. */}
+          <label
+            className={`md-label-large relative inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 border px-3 whitespace-nowrap transition-colors ${
+              filters.onDate
+                ? 'border-primary-container bg-primary-container text-on-primary-container'
+                : 'border-outline-variant text-on-surface-variant'
+            }`}
+          >
+            <svg viewBox="0 0 20 20" className="size-4 shrink-0" fill="none" aria-hidden="true">
+              <rect
+                x="3"
+                y="4.5"
+                width="14"
+                height="12"
+                rx="2"
+                stroke="currentColor"
+                strokeWidth="1.6"
+              />
+              <path
+                d="M3 8.5h14M7 3v3M13 3v3"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+              />
+            </svg>
+
+            <span>{filters.onDate ? formatPickedDay(filters.onDate) : 'Pick a date'}</span>
+
+            {/* The real input, covering the label so the whole chip is the hit
+                target, and transparent so the chip's own styling shows. */}
+            <input
+              type="date"
+              value={filters.onDate}
+              onChange={(e) => onChange({ ...filters, onDate: e.target.value })}
+              aria-label="Show events on a specific date"
+              className="absolute inset-0 cursor-pointer opacity-0"
+            />
+          </label>
+
+          {filters.onDate && (
+            <button
+              type="button"
+              onClick={() => onChange({ ...filters, onDate: '' })}
+              className="md-label-large shrink-0 px-2 text-primary"
+            >
+              Clear date
+            </button>
+          )}
         </div>
 
         {/* Announced politely, so a screen reader hears the count change as the

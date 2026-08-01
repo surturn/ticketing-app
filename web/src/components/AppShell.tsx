@@ -9,7 +9,7 @@ import type { ReactNode } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { useAuth } from '@/auth/AuthProvider';
 import { ThemeToggle } from '@/lib/theme';
-import { ButtonAnchor, ButtonLink } from '@/components/ui';
+import { ButtonLink } from '@/components/ui';
 
 function Wordmark() {
   return (
@@ -185,14 +185,14 @@ export function AppShell({ children }: { children: ReactNode }) {
                 control — an organiser arriving from a phone is the customer,
                 and burying the one thing they came for in an overflow menu
                 would be the wrong economy. */}
-            <ButtonAnchor
-              href="/#host"
+            <ButtonLink
+              to="/host"
               variant="outlined-gold"
               className="ml-1 h-10 px-3 whitespace-nowrap sm:px-5"
             >
               <span className="sm:hidden">Host</span>
               <span className="hidden sm:inline">Host an event</span>
-            </ButtonAnchor>
+            </ButtonLink>
           </nav>
         </div>
       </header>
@@ -220,9 +220,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
 
             <FooterColumn title="For organisers">
-              <FooterAnchor href="/#host">List an event</FooterAnchor>
-              <FooterAnchor href="/#pricing">Fees and payouts</FooterAnchor>
-              <FooterLink to="/account">Your dashboard</FooterLink>
+              <FooterLink to="/host">List an event</FooterLink>
+              <FooterLink to="/host">Fees and payouts</FooterLink>
+              <FooterLink to="/admin">Your dashboard</FooterLink>
             </FooterColumn>
 
             <FooterColumn title="For buyers">

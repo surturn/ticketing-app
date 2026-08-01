@@ -87,7 +87,7 @@ export function Button({
         'md-state md-label-large inline-flex cursor-pointer items-center justify-center gap-2',
         // 48px, not 40: this is the accessibility floor for a touch target and
         // the target device is a phone, so the floor is the default.
-        'h-12 rounded-full px-6 transition-colors duration-150',
+        'clipped h-12 px-6 transition-colors duration-150',
         // M3's disabled treatment: 12% on-surface fill, 38% on-surface label.
         'disabled:cursor-not-allowed disabled:border-transparent disabled:bg-on-surface/12 disabled:text-on-surface/38 disabled:shadow-none',
         VARIANT[variant],
@@ -121,7 +121,7 @@ export function ButtonLink({
       to={to}
       viewTransition={viewTransition}
       className={cx(
-        'md-state md-label-large inline-flex h-12 cursor-pointer items-center justify-center gap-2 rounded-full px-6 transition-colors duration-150',
+        'md-state md-label-large clipped inline-flex h-12 cursor-pointer items-center justify-center gap-2 px-6 transition-colors duration-150',
         VARIANT[variant],
         className,
       )}
@@ -155,7 +155,7 @@ export function ButtonAnchor({
     <a
       href={href}
       className={cx(
-        'md-state md-label-large inline-flex h-12 cursor-pointer items-center justify-center gap-2 rounded-full px-6 transition-colors duration-150',
+        'md-state md-label-large clipped inline-flex h-12 cursor-pointer items-center justify-center gap-2 px-6 transition-colors duration-150',
         VARIANT[variant],
         className,
       )}
@@ -426,7 +426,7 @@ export function Chip({
         // Fully rounded, and 32px tall so a row of chips reads as one line of
         // chrome — the 48px touch target comes from the `before` overlay rather
         // than from 16px of extra vertical space in the layout.
-        'md-state md-label-large relative inline-flex h-8 cursor-pointer items-center gap-2 rounded-full px-4 transition-colors',
+        'md-state md-label-large clipped clipped-sm relative inline-flex h-8 cursor-pointer items-center gap-2 px-4 transition-colors',
         "before:absolute before:inset-x-0 before:top-1/2 before:h-12 before:-translate-y-1/2 before:content-['']",
         selected
           ? 'bg-primary-container text-on-primary-container'

@@ -18,7 +18,6 @@
  */
 import { useMemo } from 'react';
 import type { EventSummary } from '@/lib/api';
-import { ButtonAnchor } from '@/components/ui';
 
 /**
  * Beams from the lighting rig.
@@ -150,7 +149,7 @@ function Ticker({ events }: { events: EventSummary[] }) {
 
 export function StageHero({ events }: { events: EventSummary[] }) {
   return (
-    <section id="host" className="relative -mx-4 mb-10 overflow-hidden sm:-mx-6">
+    <section className="relative -mx-4 mb-10 overflow-hidden sm:-mx-6">
       <MarqueeBulbs />
       <StageLights />
 
@@ -159,33 +158,20 @@ export function StageHero({ events }: { events: EventSummary[] }) {
           browser chrome, so it overshoots by the height of the address bar
           until the user scrolls and it collapses. */}
       <div className="relative flex max-h-[60dvh] flex-col justify-center px-4 pt-10 pb-8 sm:px-6 sm:pt-14 sm:pb-10">
-        {/* Gold, because this whole block is the organiser side of the product
-            speaking. It is the one page where that is the default rather than
-            the exception. */}
-        <p className="md-eyebrow text-tertiary">For organisers · Nairobi</p>
+        {/* Blue, and consumer-facing. The landing page belongs to the person
+            looking for something to go to; the organiser pitch has its own
+            route. */}
+        <p className="md-eyebrow text-primary">Nairobi</p>
 
         <h1 className="md-display-large mt-3 max-w-3xl">
-          Sell out your
+          Every night out
           <br />
-          next event
+          starts here
         </h1>
 
         <p className="md-body-large mt-5 max-w-md text-on-surface-variant">
-          List in minutes, share one link, and get paid by M-Pesa. Your buyers
-          never leave WhatsApp to find you.
+          Pay with M-Pesa. Your ticket arrives by email and scans at the door.
         </p>
-
-        <div className="mt-7 flex flex-wrap items-center gap-3">
-          {/* Filled gold: the organiser's primary action, and the only filled
-              button in this view. */}
-          <ButtonAnchor href="#pricing" variant="gold">
-            Start listing
-          </ButtonAnchor>
-
-          <ButtonAnchor href="#whats-on" variant="outlined">
-            See what&rsquo;s on
-          </ButtonAnchor>
-        </div>
       </div>
 
       <Ticker events={events} />

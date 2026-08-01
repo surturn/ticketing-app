@@ -10,13 +10,15 @@
  * work in §10.1 needs one: only the data router owns enough of the navigation
  * to hand it to `document.startViewTransition`, and `useViewTransitionState` —
  * which is how a single card claims the shared poster name on its way out —
- * throws outside one. Nothing else about the routing changes.
+ * throws outside one.
  */
 import { Outlet, RouterProvider, createBrowserRouter } from 'react-router-dom';
 import { AppShell } from './components/AppShell';
 import { AuthProvider } from './auth/AuthProvider';
 import { ThemeProvider } from './lib/theme';
+import { lazyRoute } from './lib/lazyRoute';
 import { EventsPage } from './pages/EventsPage';
+import { RouteError } from './pages/RouteError';
 
 /**
  * The providers and the frame, as the route every screen renders inside.
@@ -44,54 +46,77 @@ function Root() {
  * would only add a waterfall in front of the first paint. Everything else is
  * fetched when its route is first visited, which keeps the things only some
  * visitors ever touch — the confetti and QR renderer on the order page, the
- * account screens — off the critical path for someone who arrived to look at
- * one event on metered 4G.
+ * admin dashboard — off the critical path for someone who arrived on 4G to
+ * look at one event.
  *
- * The router resolves these before rendering the route, so there is no
- * intermediate Suspense flash to design around.
+ * Each is wrapped in `lazyRoute`, which recovers from the one failure that
+ * splitting guarantees: a deploy retires the hashed chunk names an already-open
+ * tab is still asking for. See that module for why the fix is a reload rather
+ * than a message.
  */
 const router = createBrowserRouter([
   {
     element: <Root />,
+    // Catches a chunk that will not load and anything a screen throws, in place
+    // of React Router's developer error page.
+    errorElement: (
+      <ThemeProvider>
+        <AuthProvider>
+          <AppShell>
+            <RouteError />
+          </AppShell>
+        </AuthProvider>
+      </ThemeProvider>
+    ),
     children: [
       { path: '/', element: <EventsPage /> },
       {
         path: '/events/:slug',
-        lazy: async () => ({ Component: (await import('./pages/EventPage')).EventPage }),
+        lazy: lazyRoute('event', () => import('./pages/EventPage'), (m) => m.EventPage),
       },
       {
         path: '/orders/:reference',
-        lazy: async () => ({ Component: (await import('./pages/OrderPage')).OrderPage }),
+        lazy: lazyRoute('order', () => import('./pages/OrderPage'), (m) => m.OrderPage),
       },
       {
         path: '/account',
-        lazy: async () => ({ Component: (await import('./pages/AccountPage')).AccountPage }),
+        lazy: lazyRoute('account', () => import('./pages/AccountPage'), (m) => m.AccountPage),
       },
       {
         path: '/account/settings',
-        lazy: async () => ({ Component: (await import('./pages/SettingsPage')).SettingsPage }),
+        lazy: lazyRoute(
+          'settings',
+          () => import('./pages/SettingsPage'),
+          (m) => m.SettingsPage,
+        ),
+      },
+      {
+        path: '/host',
+        lazy: lazyRoute('host', () => import('./pages/HostPage'), (m) => m.HostPage),
       },
       {
         path: '/signin',
-        lazy: async () => ({ Component: (await import('./pages/SignInPage')).SignInPage }),
+        lazy: lazyRoute('signin', () => import('./pages/SignInPage'), (m) => m.SignInPage),
       },
-      // The organiser dashboard. Split out like every other route, which also
-      // means its bundle never ships to a buyer who only came to see one event.
       {
         path: '/admin',
-        lazy: async () => ({ Component: (await import('./pages/AdminPage')).AdminPage }),
+        lazy: lazyRoute('admin', () => import('./pages/AdminPage'), (m) => m.AdminPage),
       },
       {
         path: '/admin/events/:id',
-        lazy: async () => ({
-          Component: (await import('./pages/AdminEventPage')).AdminEventPage,
-        }),
+        lazy: lazyRoute(
+          'admin-event',
+          () => import('./pages/AdminEventPage'),
+          (m) => m.AdminEventPage,
+        ),
       },
       {
         path: '*',
-        lazy: async () => ({
-          Component: (await import('./pages/NotFoundPage')).NotFoundPage,
-        }),
+        lazy: lazyRoute(
+          'not-found',
+          () => import('./pages/NotFoundPage'),
+          (m) => m.NotFoundPage,
+        ),
       },
     ],
   },

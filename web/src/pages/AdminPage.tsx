@@ -12,7 +12,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ApiError } from '@/lib/api';
-import { formatMoney } from '@/lib/format';
 import { Badge, Button, Card, EmptyState, ErrorState, Skeleton } from '@/components/ui';
 import { AdminGate, AdminSignOut } from '@/admin/AdminGate';
 import { EventForm } from '@/admin/EventForm';
@@ -197,6 +196,3 @@ export function AdminPage() {
     </AdminGate>
   );
 }
-
-/** Re-exported so the event detail route can reuse the same gate. */
-export { formatMoney };

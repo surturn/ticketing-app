@@ -22,7 +22,7 @@ import { useAuth } from '@/auth/AuthProvider';
 import { selectUpcoming, UpcomingTickets } from '@/components/UpcomingTickets';
 import { EventPoster } from '@/components/EventPoster';
 import { FeaturedEvent } from '@/components/FeaturedEvent';
-import { OrganiserPitch } from '@/components/OrganiserPitch';
+import { EventRail } from '@/components/EventRail';
 import { StageHero } from '@/components/StageHero';
 import {
   applyFilters,
@@ -94,11 +94,12 @@ export function EventsPage() {
 
   return (
     <div>
-      {/* Two homepages, one route.
-          A signed-out visitor who typed the domain is usually deciding where to
-          list, so they get the pitch. A signed-in buyer is not — they already
-          chose. Leading their own home with a sales page aimed at somebody else
-          is what made going back from the account feel like leaving. */}
+      {/* The landing page is what's on, and nothing else.
+          The listing pitch lives at /host rather than here: a visitor arriving
+          at the domain is looking for something to go to, and a sales page for
+          organisers above the grid put the wrong audience's screen first. The
+          organiser door stays in the app bar and the footer, where someone
+          looking for it will look. */}
       {signedIn ? (
         <UpcomingTickets
           tickets={upcoming}
@@ -107,15 +108,18 @@ export function EventsPage() {
           }
         />
       ) : (
-        <>
-          <StageHero events={events} />
-          <OrganiserPitch />
-        </>
+        <StageHero events={events} />
       )}
 
-      {/* Discovery starts here. Headed and anchored so the hero's "See what's
-          on" has somewhere to land, and so the section is navigable rather than
-          being an unlabelled grid hanging off the bottom of a pitch. */}
+      {/* A rail of what is closest, above the full grid.
+          Only worth the space once there is enough behind it to scroll — with
+          three events it would just be the grid again, rotated. */}
+      {!loading && !error && events.length >= 4 && (
+        <EventRail title="Happening soon" events={events.slice(0, 10)} />
+      )}
+
+      {/* Discovery starts here. Headed and anchored so the section is navigable
+          rather than being an unlabelled grid hanging off the bottom. */}
       <h2 id="whats-on" className="md-headline-medium mb-6 scroll-mt-20">
         What&rsquo;s on
       </h2>

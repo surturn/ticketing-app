@@ -577,6 +577,50 @@
   background-repeat: repeat-x;
 }
 
+/* ---------------------------------------------------------------------------
+   Clipped ends — the button silhouette.
+
+   A fully-rounded pill is the default shape of every framework ever shipped,
+   which is exactly the problem: it reads as a template. Chamfering the four
+   corners instead gives the same compact, obviously-pressable form with the
+   silhouette of something guillotined out of card — which is what a ticket is.
+
+   It also resolves a contradiction in the guidelines. §6.2 asks for a punched
+   notch on filled buttons while §7.5 specifies `--shape-full`; a pill has no
+   corner to punch, so the two could not both be honoured. A chamfer is the
+   notch, applied to every corner and at a readable size.
+
+   `clip-path` clips the focus outline away with everything else, so focus is
+   drawn as an inset ring instead. That is a deliberate trade: the ring sits
+   inside the shape rather than 2px outside it, and remains clearly visible,
+   which is what §11 is actually asking for.
+   --------------------------------------------------------------------------- */
+@utility clipped {
+  clip-path: polygon(
+    var(--clip, 9px) 0,
+    calc(100% - var(--clip, 9px)) 0,
+    100% var(--clip, 9px),
+    100% calc(100% - var(--clip, 9px)),
+    calc(100% - var(--clip, 9px)) 100%,
+    var(--clip, 9px) 100%,
+    0 calc(100% - var(--clip, 9px)),
+    0 var(--clip, 9px)
+  );
+}
+
+.clipped:focus-visible {
+  outline: none;
+  box-shadow:
+    inset 0 0 0 2px var(--md-surface),
+    inset 0 0 0 4px var(--md-primary);
+}
+
+/* Smaller chamfer for chips and other short controls, where a 9px cut on a
+   32px-tall element would eat most of the corner. */
+@utility clipped-sm {
+  --clip: 6px;
+}
+
 /* The punched stub — a single 8px inward notch at the top-left corner. Applied
    as a clip-path so it cuts the element itself rather than being faked with a
    coloured square that only works over a known background. */
