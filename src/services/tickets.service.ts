@@ -167,7 +167,7 @@ export async function getTicketsForOrder(orderId: string): Promise<IssuedTicket[
 
 export interface CheckInResult {
   admitted: boolean;
-  reason?: 'already_checked_in' | 'void';
+  reason?: 'already_checked_in' | 'void' | 'order_not_paid';
   ticket: {
     code: string;
     holderName: string | null;
@@ -222,6 +222,32 @@ export async function checkInTicket(
       return { admitted: false, reason: 'void' as const, ticket: view };
     }
 
+    /**
+     * The order, not just the ticket, has to still be good.
+     *
+     * `tickets.status` is a denormalisation: it is only correct if every state
+     * that should stop admission remembers to write it. Voiding does. A refund
+     * does not — `refunded` is a real order status, guarded against in
+     * `releaseOrder` and filterable in the admin API, but nothing sets it and no
+     * path voids the tickets behind it. The first refund this product processes
+     * will very likely be a manual correction during a dispute, and the buyer
+     * would keep a ticket that scans green for an event they were paid back for.
+     *
+     * Reading the order here makes admission derive from the authoritative
+     * record instead, so refunds, chargebacks and any future reversal propagate
+     * to the gate without a second place to remember. It costs one indexed read
+     * inside a transaction that is already holding this ticket's row lock.
+     */
+    const [order] = await tx
+      .select({ status: orders.status })
+      .from(orders)
+      .where(eq(orders.id, ticket.orderId))
+      .limit(1);
+
+    if (order?.status !== 'paid') {
+      return { admitted: false, reason: 'order_not_paid' as const, ticket: view };
+    }
+
     if (ticket.status === 'checked_in') {
       // Not an error — the gate wants to see when and where it was first used.
       return { admitted: false, reason: 'already_checked_in' as const, ticket: view };
@@ -269,6 +295,17 @@ export async function voidTicket(
   actor = 'admin',
 ): Promise<void> {
   await withTransaction(async (tx) => {
+    // Read before writing, so the ledger can record the state actually left
+    // rather than an assumed one.
+    const [before] = await tx
+      .select({ status: tickets.status })
+      .from(tickets)
+      .where(eq(tickets.code, code))
+      .for('update')
+      .limit(1);
+
+    if (!before) throw notFound(`No ticket matches code ${code}`);
+
     const result = await tx
       .update(tickets)
       .set({ status: 'void', updatedAt: new Date() })
@@ -280,11 +317,16 @@ export async function voidTicket(
 
     // Voiding is the one destructive act an admin can perform on a sold ticket,
     // so it is exactly what the ledger exists to record.
+    //
+    // `fromState` is read rather than assumed: voiding a ticket that had already
+    // been checked in is precisely the case someone will later need to
+    // reconstruct — somebody was admitted, and then the ticket was cancelled —
+    // and hardcoding 'issued' erased the half of that story that mattered.
     await recordTransition(tx, {
       entity: 'ticket',
       entityId: voided.id,
       event: 'ticket.voided',
-      fromState: 'issued',
+      fromState: before.status,
       toState: 'void',
       actor,
       orderId: voided.orderId,

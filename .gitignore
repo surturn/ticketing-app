@@ -10,3 +10,9 @@ coverage/
 /docs
 service_account.json
 .env.production
+
+# Config pulled down from Railway, and captured API responses kept while
+# debugging. Both are harmless today, but platform config landing uncovered in
+# the working tree is one `git add .` away from committing something that is not.
+.railway-config-pull-*/
+r.json
