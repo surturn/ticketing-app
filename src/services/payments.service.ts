@@ -1,6 +1,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { db, withTransaction } from '../db/client.js';
 import { orders, payments, webhookEvents, type Payment } from '../db/schema.js';
+import { getGateway } from '../gateways/registry.js';
 import type { GatewayName, SettlementResult } from '../gateways/types.js';
 import { invalidateEvent } from '../lib/cache.js';
 import { logger } from '../lib/logger.js';
@@ -26,6 +27,28 @@ export interface SettlementOutcomeReport {
   reason?: string;
   orderStatus?: string;
   requiresRefund?: boolean;
+}
+
+/**
+ * Where a settlement result came from, and therefore how far it is trusted.
+ *
+ * `callback` is an unauthenticated HTTP request that claims to be Safaricom. A
+ * shared token on the query string is the only thing distinguishing it from
+ * anyone else's POST, and the `gatewayRef` needed to aim one at a specific
+ * payment is returned to the buyer when they check out — so a success arriving
+ * this way is a claim, not a fact.
+ *
+ * `query` is our own outbound call to Daraja over TLS, authenticated with our
+ * credentials. It is the source of truth, and results carrying this provenance
+ * are already confirmed by construction.
+ */
+export type SettlementSource = 'callback' | 'query';
+
+export interface ApplySettlementOptions {
+  webhookEventId?: string | null;
+  /** Defaults to `callback` — the untrusted case, so a new caller is confirmed
+   *  rather than trusted by omission. */
+  source?: SettlementSource;
 }
 
 /**
@@ -74,7 +97,7 @@ async function markWebhook(
  */
 export async function applySettlement(
   result: SettlementResult,
-  options: { webhookEventId?: string | null } = {},
+  options: ApplySettlementOptions = {},
 ): Promise<SettlementOutcomeReport> {
   // Claim the payment before touching it.
   //
@@ -143,6 +166,44 @@ export async function applySettlement(
     return { applied: false, reason: 'still_pending' };
   }
 
+  /**
+   * A success we were told about is confirmed with Daraja before it counts.
+   *
+   * This is what makes the callback endpoint's shared token stop being the only
+   * thing standing between an attacker and free tickets. Anyone can POST a
+   * `ResultCode: 0`; only a transaction that really happened survives being
+   * asked about. Safaricom becomes the authority on whether money moved, which
+   * is where that authority belonged all along.
+   *
+   * Only successes, and only from a callback:
+   *
+   *   * A forged *failure* would release seats and mark an order failed, which
+   *     is a nuisance rather than theft, and confirming those too would double
+   *     the load on an endpoint Daraja rate-limits.
+   *   * A result whose provenance is already `query` came from this exact call.
+   *     Re-asking would spend a second request to learn what we just learned.
+   */
+  if (result.outcome === 'succeeded' && (options.source ?? 'callback') === 'callback') {
+    const confirmation = await confirmSuccess(payment, result);
+
+    if (!confirmation.confirmed) {
+      // Release the claim, or no later reconciler attempt could pick this
+      // payment up — the same reasoning as the `pending` branch above.
+      await db
+        .update(payments)
+        .set({ claimedAt: null, updatedAt: new Date() })
+        .where(and(eq(payments.id, payment.id), eq(payments.status, 'pending')));
+
+      await markWebhook(
+        options.webhookEventId ?? null,
+        'ignored',
+        `unconfirmed: ${confirmation.reason}`,
+      );
+
+      return { applied: false, reason: `unconfirmed_${confirmation.reason}` };
+    }
+  }
+
   try {
     if (result.outcome === 'succeeded') {
       return await settleSuccess(payment, result, options.webhookEventId ?? null);
@@ -169,6 +230,71 @@ export async function applySettlement(
     );
     throw error;
   }
+}
+
+/**
+ * Asks Daraja whether the transaction a callback described actually succeeded.
+ *
+ * Fails closed. An inconclusive answer — a network error, a rate limit, Daraja's
+ * 5xx "still being processed" — is not a confirmation, so the payment is left
+ * `pending` and unclaimed for the reconciler to retry. That costs a genuine
+ * buyer a delay measured in the reconcile interval; treating the same
+ * uncertainty as a confirmation would cost the difference between a real payment
+ * and an invented one.
+ *
+ * The query API does not return the amount, so this confirms *that* the
+ * transaction succeeded, not what it was worth. The underpayment guard in
+ * `settleSuccess` still reads its figure from the callback — which is acceptable
+ * only because a forged callback can no longer reach that code at all: an
+ * attacker who cannot make Daraja agree the transaction happened never gets far
+ * enough to have their amount believed.
+ */
+async function confirmSuccess(
+  payment: Payment,
+  result: SettlementResult,
+): Promise<{ confirmed: true } | { confirmed: false; reason: string }> {
+  const gateway = getGateway(payment.gateway as GatewayName);
+
+  let confirmation: SettlementResult;
+  try {
+    confirmation = await gateway.queryStatus(result.gatewayRef);
+  } catch (error) {
+    logger.warn(
+      { err: error, paymentId: payment.id, gatewayRef: result.gatewayRef },
+      'could not confirm a reported settlement; leaving it for the reconciler',
+    );
+    return { confirmed: false, reason: 'query_failed' };
+  }
+
+  if (confirmation.outcome === 'succeeded') return { confirmed: true };
+
+  if (confirmation.outcome === 'pending') {
+    // Daraja has not finished deciding. Genuinely ambiguous rather than
+    // suspicious: a callback can outrun the query API by a moment.
+    return { confirmed: false, reason: 'still_pending' };
+  }
+
+  /**
+   * Daraja says this transaction did not succeed, and something told us it did.
+   *
+   * There is no benign explanation involving a real Safaricom callback, so this
+   * is logged as loudly as anything in this service: it is either a forgery
+   * against the callback endpoint or two environments sharing a shortcode. Both
+   * want a human, and the first wants one urgently.
+   */
+  logger.error(
+    {
+      paymentId: payment.id,
+      orderId: payment.orderId,
+      gatewayRef: result.gatewayRef,
+      claimedResultCode: result.resultCode,
+      actualOutcome: confirmation.outcome,
+      actualResultCode: confirmation.resultCode,
+    },
+    'REPORTED SETTLEMENT CONTRADICTED BY THE GATEWAY — no tickets issued',
+  );
+
+  return { confirmed: false, reason: 'contradicted' };
 }
 
 async function settleSuccess(
