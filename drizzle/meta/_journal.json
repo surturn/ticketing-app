@@ -50,6 +50,13 @@
       "when": 1785412349244,
       "tag": "0006_clammy_lilandra",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1785441504060,
+      "tag": "0007_far_captain_cross",
+      "breakpoints": true
     }
   ]
 }

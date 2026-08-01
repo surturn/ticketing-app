@@ -38,10 +38,21 @@ export interface PublicEvent {
   name: string;
   description: string | null;
   venue: string | null;
+  posterUrl: string | null;
   timezone: string;
   currency: string;
   startsAt: Date;
   endsAt: Date | null;
+  /**
+   * The cheapest ticket still purchasable, or null when nothing is.
+   *
+   * Carried on the *listing* deliberately. A buyer deciding which of twenty
+   * events to open is deciding partly on price, and making them open each one
+   * to find out is a click they should not have to spend. It is the lowest
+   * price actually on sale, not the lowest ever offered, so a sold-out early
+   * release cannot advertise a price nobody can pay.
+   */
+  fromPriceCents: number | null;
   tiers: PublicTier[];
 }
 
@@ -120,16 +131,45 @@ export async function listPublishedEvents(): Promise<
       )
       .orderBy(asc(events.startsAt));
 
+    if (rows.length === 0) return [];
+
+    // One query for every event's cheapest live tier, rather than one per event.
+    // A listing of twenty events would otherwise be twenty round trips behind a
+    // cache that expires every minute.
+    const cheapest = await db
+      .select({
+        eventId: ticketTiers.eventId,
+        priceCents: sql<number>`min(${ticketTiers.priceCents})`.as('price_cents'),
+      })
+      .from(ticketTiers)
+      .where(
+        and(
+          inArray(
+            ticketTiers.eventId,
+            rows.map((event) => event.id),
+          ),
+          // `active` only. A `closed` tier is shown to buyers as sold out, so
+          // advertising its price on the listing would quote a number nobody
+          // can actually pay.
+          eq(ticketTiers.status, 'active'),
+        ),
+      )
+      .groupBy(ticketTiers.eventId);
+
+    const priceByEvent = new Map(cheapest.map((row) => [row.eventId, row.priceCents]));
+
     return rows.map((event) => ({
       id: event.id,
       slug: event.slug,
       name: event.name,
       description: event.description,
       venue: event.venue,
+      posterUrl: event.posterUrl,
       timezone: event.timezone,
       currency: event.currency,
       startsAt: event.startsAt,
       endsAt: event.endsAt,
+      fromPriceCents: priceByEvent.get(event.id) ?? null,
     }));
   });
 }
@@ -167,10 +207,13 @@ export async function listPastEvents(limit = 50): Promise<PastEvent[]> {
       name: event.name,
       description: event.description,
       venue: event.venue,
+      posterUrl: event.posterUrl,
       timezone: event.timezone,
       currency: event.currency,
       startsAt: event.startsAt,
       endsAt: event.endsAt,
+      // A finished event has nothing on sale, so there is no price to quote.
+      fromPriceCents: null,
       archived: event.archivedAt !== null,
       archivedAt: event.archivedAt,
     }));
@@ -229,10 +272,20 @@ export async function getPublicEvent(slug: string): Promise<PublicEvent> {
       name: event.name,
       description: event.description,
       venue: event.venue,
+      posterUrl: event.posterUrl,
       timezone: event.timezone,
       currency: event.currency,
       startsAt: event.startsAt,
       endsAt: event.endsAt,
+      // Derived from the tiers already loaded here rather than queried again.
+      fromPriceCents:
+        tiers
+          .filter((tier) => tier.status === 'active')
+          .reduce<number | null>(
+            (lowest, tier) =>
+              lowest === null ? tier.priceCents : Math.min(lowest, tier.priceCents),
+            null,
+          ) ?? null,
       tiers: tiers.map((tier) => toPublicTier(tier, event.currency)),
     };
   });

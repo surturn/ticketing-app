@@ -58,6 +58,34 @@ export function sendStorefrontIndex(_request: FastifyRequest, reply: FastifyRepl
   );
 }
 
+/**
+ * Whether an unmatched request should be answered with the entry document.
+ *
+ * The naive version of this — "any GET that is not /api/" — is actively
+ * harmful. A request for a missing `/assets/index-abc123.js` would be answered
+ * with HTML and a `200`, the browser would refuse to execute HTML as a module,
+ * and the page would render blank with nothing in the console and a success
+ * status on every request. That is a broken deploy disguised as a working one.
+ *
+ * A browser asking for a *page* sends `Accept: text/html`; asking for a module,
+ * a stylesheet or an image it does not. That header is the discriminator, and
+ * anything with a file extension is excluded as well, so a missing asset fails
+ * as a missing asset.
+ */
+export function wantsStorefrontDocument(request: FastifyRequest): boolean {
+  if (request.method !== 'GET' && request.method !== 'HEAD') return false;
+  if (request.url.startsWith('/api/')) return false;
+
+  const accept = request.headers.accept ?? '';
+  if (!accept.includes('text/html')) return false;
+
+  // `/orders/TKT-8F3KQ2XA` is a route; `/assets/app.js` is a file that is not
+  // there. Only the path is inspected, never the query string.
+  const path = request.url.split('?')[0] ?? '';
+  const lastSegment = path.slice(path.lastIndexOf('/') + 1);
+  return !lastSegment.includes('.');
+}
+
 export async function registerStorefront(app: FastifyInstance): Promise<boolean> {
   if (!existsSync(path.join(STOREFRONT_ROOT, 'index.html'))) {
     logger.info(

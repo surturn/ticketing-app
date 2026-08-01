@@ -180,6 +180,20 @@ export const events = pgTable(
     name: text('name').notNull(),
     description: text('description'),
     venue: text('venue'),
+
+    /**
+     * The promoter's poster.
+     *
+     * Event promotion in this market runs on artwork — a listing without it is
+     * a directory, not a shop window. Stored as a URL rather than bytes: posters
+     * are already produced and hosted elsewhere by whoever designed them, and
+     * putting image serving in the API's path would make a slow image able to
+     * slow a checkout.
+     *
+     * Nullable, and every surface must cope with its absence — an organiser
+     * setting up an event at midnight should not be blocked on a designer.
+     */
+    posterUrl: text('poster_url'),
     timezone: text('timezone').notNull().default('Africa/Nairobi'),
     currency: text('currency').notNull().default('KES'),
     startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),

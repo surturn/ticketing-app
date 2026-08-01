@@ -43,6 +43,24 @@ const eventFields = z
     name: boundedText(1, 200),
     description: boundedText(1, 5_000).optional(),
     venue: boundedText(1, 200).optional(),
+    /**
+     * The poster, as a URL.
+     *
+     * Restricted to https. The storefront embeds this straight into an <img>,
+     * and an http source on an https page is blocked as mixed content — the
+     * poster would simply not appear, with nothing to explain why. Rejecting it
+     * here turns a silent blank card into an error the organiser can act on
+     * while they are still looking at the form.
+     */
+    posterUrl: z
+      .string()
+      .url('Must be a full URL, including https://')
+      .max(2_000)
+      .refine(
+        (value) => value.startsWith('https://'),
+        'Must be an https:// URL — browsers block insecure images on a secure page',
+      )
+      .optional(),
     // Validated against the runtime's own tz database rather than a length
     // bound: an unknown zone would otherwise only surface much later, when
     // Intl.DateTimeFormat threw while formatting a ticket email.
