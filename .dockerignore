@@ -1,10 +1,39 @@
-node_modules
-dist
-.env
-.env.local
+# Patterns here match against the whole build context, but a bare name like
+# `node_modules` only ever matches at the TOP level — it does not match
+# `web/node_modules`. That distinction matters here: the storefront stage runs
+# `COPY web/ ./` after its own `npm ci`, so an unignored `web/node_modules` from
+# a developer's working copy is copied straight over the freshly installed one.
+# When the two platforms differ — a Windows or macOS checkout building a Linux
+# image — the Vite build then dies on a missing esbuild or rollup binary,
+# because npm installs those as platform-specific optional dependencies.
+#
+# The `**/` prefixes are therefore load-bearing, not redundant.
+**/node_modules
+**/dist
+**/coverage
+**/*.log
+
+# Every environment file, at any depth.
+#
+# No stage copies one today, but this is defence in depth: the day someone adds
+# a `COPY . .`, production credentials would be baked into an image layer and
+# travel with it into the registry. Far cheaper to prevent than to discover.
+**/.env
+**/.env.*
+
 .git
 .gitignore
-*.log
-coverage
+.github
 docker-compose.yml
 README.md
+
+# Internal notes, and the platform's local scratch directories.
+docs
+.railway
+.railway-config-pull-*
+
+# Safaricom's initiator certificates and any other key material. These belong in
+# the platform's secret store and are mounted at runtime, never baked into an
+# image.
+certs
+service_account.json

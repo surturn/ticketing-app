@@ -9,3 +9,4 @@ certs/*.pem
 coverage/
 /docs
 service_account.json
+.env.production
