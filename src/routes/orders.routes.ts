@@ -1,6 +1,7 @@
 import { LIMITS } from '../config/rate-limits.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { optionalUser } from '../plugins/auth.js';
 import { getOrderByReference, getOrderStatus } from '../services/orders.service.js';
 
 const referenceParams = z.object({ reference: z.string().min(4).max(40) });
@@ -13,10 +14,23 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
   // reasoning behind `orderRead` describes.
   app.get(
     '/api/orders/:reference',
-    { config: { rateLimit: LIMITS.orderRead } },
+    {
+      // Optional, not required. A guest checkout has no account by definition,
+      // and the reference has to keep resolving for them or they can never see
+      // what they bought. Signing in adds the scannable payloads; it is not the
+      // price of reading your own order.
+      preHandler: optionalUser,
+      config: { rateLimit: LIMITS.orderRead },
+    },
     async (request) => {
       const { reference } = referenceParams.parse(request.params);
-      return { order: await getOrderByReference(reference) };
+      return {
+        order: await getOrderByReference(reference, {
+          // From the verified token only. An id in the query string would make
+          // ownership something the caller asserts.
+          uid: request.user?.uid ?? null,
+        }),
+      };
     },
   );
 

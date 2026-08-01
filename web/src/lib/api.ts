@@ -35,13 +35,37 @@ interface RequestOptions extends Omit<RequestInit, 'body'> {
    * checkout — cannot accidentally become authenticated ones.
    */
   auth?: boolean;
+  /**
+   * Attach the buyer's ID token when there is one, and proceed without it when
+   * there is not.
+   *
+   * For endpoints that answer either way and answer *more* when they know who
+   * is asking — the order page above all, where a guest sees their order and a
+   * signed-in owner also gets the scannable tickets. `auth: true` is wrong
+   * there: it would refuse a guest their own order rather than showing them the
+   * part they are entitled to.
+   */
+  optionalAuth?: boolean;
 }
 
 export async function apiFetch<T>(
   path: string,
-  { body, auth = false, headers, ...init }: RequestOptions = {},
+  { body, auth = false, optionalAuth = false, headers, ...init }: RequestOptions = {},
 ): Promise<T> {
   const finalHeaders = new Headers(headers);
+
+  if (optionalAuth && !auth) {
+    const user = firebaseAuth().currentUser;
+    if (user) {
+      // Deliberately swallowed. A token that could not be refreshed must not
+      // stop a buyer reading their order — they simply see the guest view.
+      try {
+        finalHeaders.set('Authorization', `Bearer ${await user.getIdToken()}`);
+      } catch {
+        /* proceed unauthenticated */
+      }
+    }
+  }
 
   if (auth) {
     const user = firebaseAuth().currentUser;
@@ -366,9 +390,16 @@ export interface OrderStatusResponse {
 
 export interface OrderTicket {
   id: string;
-  code: string;
-  /** `code.signature` — what the QR encodes and what the gate verifies. */
-  qr: string;
+  /** `null` when the viewer does not own this order — see `ticketsRedacted`. */
+  code: string | null;
+  /**
+   * `code.signature` — what the QR encodes and what the gate verifies.
+   *
+   * `null` for anyone but the order's owner. The reference alone is enough to
+   * read an order, and it travels through forwarded links and screenshots, so
+   * the part that opens a gate is not handed out with it.
+   */
+  qr: string | null;
   tierName: string;
   status: 'issued' | 'checked_in' | 'void';
 }
@@ -398,7 +429,9 @@ export interface OrderDetail {
 }
 
 export function fetchOrder(reference: string): Promise<{ order: OrderDetail }> {
-  return apiFetch(`/api/orders/${encodeURIComponent(reference)}`);
+  // Optional auth: the reference alone returns the order, and a signed-in owner
+  // additionally gets the scannable ticket payloads.
+  return apiFetch(`/api/orders/${encodeURIComponent(reference)}`, { optionalAuth: true });
 }
 
 /** The lightweight poll used while a payment is in flight. */
