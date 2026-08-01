@@ -141,7 +141,7 @@ export function AdminGate({ children }: { children: ReactNode }) {
 export function AdminSignOut() {
   return (
     <Button
-      variant="text"
+      variant="danger"
       onClick={() => {
         clearAdminKey();
         // A full reload rather than router state: it guarantees nothing fetched

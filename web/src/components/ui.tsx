@@ -35,7 +35,8 @@ export type ButtonVariant =
   | 'outlined'
   | 'outlined-gold'
   | 'text'
-  | 'elevated';
+  | 'elevated'
+  | 'danger';
 
 const VARIANT: Record<ButtonVariant, string> = {
   filled: 'bg-primary text-on-primary',
@@ -57,6 +58,16 @@ const VARIANT: Record<ButtonVariant, string> = {
   'outlined-gold': 'border border-tertiary text-tertiary',
   text: 'text-on-surface-variant',
   elevated: 'bg-surface-container-low text-primary md-elevation-1',
+  /**
+   * Leaving, undoing, closing.
+   *
+   * The soft error *container* rather than the error colour itself: it carries
+   * a permanent red so the action is unmistakable, at a weight that does not
+   * shout across the screen or compete with the buy action. Reserving full-
+   * strength red for genuinely destructive, irreversible things is what keeps
+   * it meaningful when it does appear.
+   */
+  danger: 'bg-error-container text-on-error-container',
 };
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {

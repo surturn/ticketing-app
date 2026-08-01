@@ -78,7 +78,7 @@ export function AccountPanel() {
         <ButtonLink to="/account/settings" variant="outlined">
           Account settings
         </ButtonLink>
-        <Button type="button" variant="text" onClick={() => void signOut()}>
+        <Button type="button" variant="danger" onClick={() => void signOut()}>
           Sign out
         </Button>
       </div>

@@ -59,9 +59,13 @@ function Wordmark() {
 
 function navClass({ isActive }: { isActive: boolean }): string {
   return [
-    'md-label-large rounded-full px-4 py-2 transition',
-    // The current location is stated, not left to be inferred.
-    isActive ? 'bg-surface-container-high text-on-surface' : 'text-on-surface-variant hover:text-on-surface-variant',
+    'md-label-large clipped clipped-sm px-4 py-2 transition-colors',
+    // The current location is stated, not left to be inferred — and stated in
+    // blue, the colour this half of the product navigates in. A neutral grey
+    // fill said "something is selected" without saying it was a place.
+    isActive
+      ? 'bg-primary-container text-on-primary-container'
+      : 'text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface',
   ].join(' ');
 }
 
