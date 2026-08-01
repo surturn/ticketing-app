@@ -68,7 +68,7 @@ function EventRow({ event, onEdit }: { event: AdminEvent; onEdit: () => void }) 
           </Button>
           <Link
             to={`/admin/events/${event.id}`}
-            className="md-state md-label-large inline-flex h-10 items-center justify-center rounded-full bg-tertiary-container px-4 text-on-tertiary-container"
+            className="md-state md-label-large clipped inline-flex h-10 items-center justify-center bg-tertiary-container px-4 text-on-tertiary-container"
           >
             <span className="md-state-layer" aria-hidden="true" />
             <span className="relative">Tickets &amp; sales</span>

@@ -116,10 +116,14 @@ function TierRow({
                 : 'Not on sale'}
           </p>
         ) : (
-          <div className="flex items-center gap-1 rounded-full border border-outline-variant bg-surface p-1">
-            {/* 48px, not 40. This is the control someone taps repeatedly on a
-                phone, often in a queue, often one-handed — it is the last
-                place to economise on target size. */}
+          // The stepper's frame is clipped like everything else; the two targets
+          // inside stay circular, because a round icon button is not the generic
+          // pill the shape change was aimed at.
+          //
+          // 48px, not 40. This is the control someone taps repeatedly on a
+          // phone, often in a queue, often one-handed — the last place to
+          // economise on target size.
+          <div className="clipped flex items-center gap-1 border border-outline-variant bg-surface p-1">
             <button
               type="button"
               onClick={() => onChange(Math.max(0, quantity - 1))}
