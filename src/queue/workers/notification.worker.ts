@@ -10,6 +10,7 @@ import { formatMoney } from '../../lib/money.js';
 import { logger } from '../../lib/logger.js';
 import { createQueueClient } from '../../lib/redis.js';
 import { getOrderByReference, getOrderById } from '../../services/orders.service.js';
+import { welcomeContent } from '../../services/users.service.js';
 import type { OrderView } from '../../services/orders.service.js';
 import { QUEUE, type NotificationJob } from '../queues.js';
 
@@ -212,8 +213,30 @@ async function buildAnnouncement(
   };
 }
 
+/**
+ * The welcome, as a queued delivery.
+ *
+ * Reuses the same words the inline version sent — `welcomeContent` owns them —
+ * so moving this onto the queue changed how it is delivered and not what it
+ * says. There is no phone on an account, so the SMS field is empty; nothing in
+ * this path reads it.
+ */
+function buildWelcome(job: Extract<NotificationJob, { kind: 'account-welcome' }>): Delivery {
+  const content = welcomeContent(job.displayName);
+  return {
+    to: { email: job.email, phone: '' },
+    subject: content.subject,
+    body: content.text,
+    layout: content.layout,
+  };
+}
+
 async function build(job: NotificationJob): Promise<Delivery | null> {
   if (job.kind === 'event-announced') return buildAnnouncement(job);
+
+  // Handled before the order lookup: a welcome belongs to an account, not to a
+  // purchase, and there is no order to fetch.
+  if (job.kind === 'account-welcome') return buildWelcome(job);
 
   const order = await getOrderById(job.orderId);
 

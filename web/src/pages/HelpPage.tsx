@@ -14,6 +14,7 @@
  */
 import { Link } from 'react-router-dom';
 import { Badge, Button, ButtonLink, Card } from '@/components/ui';
+import { WhatsAppButton, WHATSAPP_DISPLAY } from '@/components/WhatsAppButton';
 import type { ReactNode } from 'react';
 
 const CONTACT = 'hello@invonicstechnologies.com';
@@ -88,6 +89,14 @@ export function HelpPage() {
         </p>
         <div className="mt-5 flex flex-wrap gap-3">
           <ButtonLink to="/account">Find my tickets</ButtonLink>
+          {/* Ahead of email, because someone reading this is usually at a gate.
+              The prefill saves them explaining the situation from scratch. */}
+          <WhatsAppButton
+            variant="outlined"
+            prefill="Hi Eventify — I paid but my ticket has not arrived."
+          >
+            WhatsApp us
+          </WhatsAppButton>
           <a
             href={`mailto:${CONTACT}?subject=Missing%20ticket`}
             className="md-state md-label-large trimmed inline-flex h-12 items-center justify-center border border-outline px-6 text-on-surface"
@@ -273,19 +282,20 @@ export function HelpPage() {
       <Card className="mt-12 p-6">
         <h2 className="md-title-large">Still stuck</h2>
         <p className="md-body-medium mt-3 text-on-surface-variant">
-          Email{' '}
+          The quickest way to reach us is WhatsApp — {WHATSAPP_DISPLAY}. Email{' '}
           <a className="text-primary underline" href={`mailto:${CONTACT}`}>
             {CONTACT}
-          </a>
-          . If it is about a particular order, include the reference from your
-          confirmation email — it looks like{' '}
+          </a>{' '}
+          works too. Either way, if it is about a particular order, include the
+          reference from your confirmation email — it looks like{' '}
           <span className="md-data-medium text-on-surface">TKT-8F3KQ2XA</span> —
           and we will find it straight away.
         </p>
-        <div className="mt-5">
+        <div className="mt-5 flex flex-wrap gap-3">
+          <WhatsAppButton prefill="Hi Eventify — I need help with an order." />
           <a
             href={`mailto:${CONTACT}`}
-            className="md-state md-label-large clipped inline-flex h-12 items-center justify-center bg-primary px-6 text-on-primary"
+            className="md-state md-label-large trimmed inline-flex h-12 items-center justify-center border border-outline px-6 text-on-surface"
           >
             <span className="md-state-layer" aria-hidden="true" />
             <span className="relative">Email us</span>

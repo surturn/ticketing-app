@@ -3,8 +3,6 @@ import { env } from '../config/env.js';
 import { db, withTransaction } from '../db/client.js';
 import { orders, users, type User } from '../db/schema.js';
 import { TERMS_VERSION } from '../lib/consent.js';
-import { sendEmail } from '../lib/email.js';
-import { renderEmail } from '../lib/email-template.js';
 import { deleteFirebaseUser, type AuthenticatedUser } from '../lib/firebase.js';
 import { logger } from '../lib/logger.js';
 import { recordTransition } from './ledger.service.js';
@@ -229,18 +227,22 @@ export async function updateProfile(
  * Failures are logged and swallowed by the caller: a sign-in must never fail
  * because an email did not send.
  */
-export async function sendWelcomeEmail(
-  email: string,
-  displayName: string | null,
-): Promise<void> {
+/**
+ * The welcome's content, without sending it.
+ *
+ * Split out so the notification worker can build the same message it would
+ * have sent inline. One copy of the words, one place to change them.
+ */
+export function welcomeContent(displayName: string | null) {
   const firstName = displayName?.trim().split(/\s+/)[0];
   const greeting = firstName ? `Hi ${firstName},` : 'Hi,';
 
-  await sendEmail({
-    to: email,
-    toName: displayName,
+  return {
     subject: 'Welcome to Eventify Tickets',
-    html: renderEmail({
+    // The structured layout, not pre-rendered HTML: the worker's `deliver`
+    // renders it through the same shell every other notification uses, so the
+    // welcome cannot drift away from the house style.
+    layout: {
       heading: firstName ? `Welcome, ${firstName}` : 'Welcome to Eventify Tickets',
       intro: [
         'Your account is ready — thank you for joining us.',
@@ -262,7 +264,7 @@ export async function sendWelcomeEmail(
             },
           }
         : {}),
-    }),
+    },
     text: [
       greeting,
       '',
@@ -290,7 +292,7 @@ export async function sendWelcomeEmail(
       'Eventify Tickets',
       'hello@invonicstechnologies.com',
     ].join('\n'),
-  });
+  };
 }
 
 /**
