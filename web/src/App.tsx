@@ -12,7 +12,12 @@
  * which is how a single card claims the shared poster name on its way out —
  * throws outside one.
  */
-import { Outlet, RouterProvider, createBrowserRouter } from 'react-router-dom';
+import {
+  Outlet,
+  RouterProvider,
+  ScrollRestoration,
+  createBrowserRouter,
+} from 'react-router-dom';
 import { AppShell } from './components/AppShell';
 import { AuthProvider } from './auth/AuthProvider';
 import { ThemeProvider } from './lib/theme';
@@ -36,6 +41,18 @@ function Root() {
             request survives navigation between routes — the request that failed
             and the page the buyer lands on next are frequently not the same. */}
         <ToastProvider>
+          {/* A new route starts at the top of the page.
+
+              Without this the browser keeps the old scroll offset across a
+              client-side navigation, so following a footer link from the bottom
+              of a long event page lands you at the bottom of the terms — past
+              the heading, mid-sentence, with no indication anything moved. It
+              reads as a broken link rather than a scroll position.
+
+              `ScrollRestoration` rather than a scroll-to-top effect, because it
+              also *restores* the previous offset on a back navigation, which is
+              what someone returning to a list of events expects. */}
+          <ScrollRestoration />
           <AppShell>
             <Outlet />
           </AppShell>

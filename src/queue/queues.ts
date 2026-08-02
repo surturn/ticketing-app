@@ -47,6 +47,19 @@ export type NotificationJob =
   | { kind: 'order-paid'; orderId: string }
   | { kind: 'order-failed'; orderId: string; reason: string }
   | { kind: 'tickets-issued'; orderId: string }
+  /**
+   * The welcome, on the sign-in that created an account.
+   *
+   * Queued rather than sent inline. It used to be fired and forgotten from the
+   * session route — `void sendWelcomeEmail(...).catch(log)` — so a provider that
+   * was briefly unreachable lost it permanently, with nothing to retry and
+   * nothing recording that a buyer never got one. Every other email in this
+   * system goes through here and retries; this was the exception, and the
+   * exception is the one that broke.
+   *
+   * Keyed on uid, so a repeated session call cannot send a second welcome.
+   */
+  | { kind: 'account-welcome'; userId: string; email: string; displayName: string | null }
   // One job per recipient rather than one per event. A single job mailing the
   // whole list would resend to everyone on a retry after a partial failure;
   // per-recipient jobs dedupe individually and retry in isolation.
@@ -225,7 +238,9 @@ export async function enqueueNotification(job: NotificationJob): Promise<void> {
   const id =
     job.kind === 'event-announced'
       ? jobId('notify', job.kind, job.eventId, hashForJobId(job.email))
-      : jobId('notify', job.kind, job.orderId);
+      : job.kind === 'account-welcome'
+        ? jobId('notify', job.kind, job.userId)
+        : jobId('notify', job.kind, job.orderId);
 
   await notificationQueue.add(JOB.NOTIFY, job, { jobId: id });
 }

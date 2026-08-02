@@ -366,33 +366,43 @@
    role, not a font-size.
 
    Display and headline sizes are fluid via clamp() so there is no jump at a
-   breakpoint. Display L bottoms out at 40px and Display M at 34px, which is
-   what keeps a hero headline inside three lines on a 360px screen.
+   breakpoint.
+
+   The small end was too heavy. The floors said 40px and 34px, but the floors
+   were never reached: the preferred term already computed to ~41px at 360px,
+   so a hero headline on a phone was set at roughly the size it wants on a
+   tablet and ate the screen before the buyer saw a price. Lowering the floor
+   alone would have changed nothing — the fix is a lower base with a gentler
+   slope, so the small end comes down and the maximum is unchanged.
+
+   Display L now lands near 32px on a 360px screen and still reaches 57px on a
+   desktop. The middle of the range comes down with it, which is the cost of
+   moving the small end without touching the large one.
    --------------------------------------------------------------------------- */
 @utility md-display-large {
   font-family: var(--font-display);
-  font-size: clamp(2.5rem, 1.75rem + 3.75vw, 3.5625rem);
+  font-size: clamp(2rem, 1.3rem + 3vw, 3.5625rem);
   line-height: 1.12;
   font-weight: 800;
   letter-spacing: -0.02em;
 }
 @utility md-display-medium {
   font-family: var(--font-display);
-  font-size: clamp(2.125rem, 1.65rem + 2.375vw, 2.8125rem);
+  font-size: clamp(1.75rem, 1.2rem + 2.4vw, 2.8125rem);
   line-height: 1.16;
   font-weight: 800;
   letter-spacing: -0.02em;
 }
 @utility md-display-small {
   font-family: var(--font-display);
-  font-size: clamp(1.875rem, 1.55rem + 1.625vw, 2.25rem);
+  font-size: clamp(1.5rem, 1.1rem + 1.8vw, 2.25rem);
   line-height: 1.22;
   font-weight: 800;
   letter-spacing: -0.02em;
 }
 @utility md-headline-large {
   font-family: var(--font-display);
-  font-size: clamp(1.75rem, 1.6rem + 0.75vw, 2rem);
+  font-size: clamp(1.375rem, 1.05rem + 1.4vw, 2rem);
   line-height: 1.25;
   font-weight: 700;
   letter-spacing: -0.01em;
