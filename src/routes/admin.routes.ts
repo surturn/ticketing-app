@@ -1,7 +1,7 @@
 import rateLimit from '@fastify/rate-limit';
 import { cacheRedis } from '../lib/redis.js';
 import { LIMITS } from '../config/rate-limits.js';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { and, count, desc, eq, sql, sum } from 'drizzle-orm';
 import { z } from 'zod';
 import { db, withTransaction } from '../db/client.js';
@@ -29,6 +29,12 @@ import {
   requireAdmin,
   revokeScannerToken,
 } from '../plugins/auth.js';
+import {
+  assertEventInScope,
+  eventScopeFilter,
+  loadScopedEvent,
+  organisationForNewEvent,
+} from '../services/tenancy.service.js';
 import { enqueueEventAnnouncement } from '../queue/queues.js';
 import { archivePastEvents } from '../services/events.service.js';
 import {
@@ -168,6 +174,21 @@ const tierPatchBody = tierFields
 
 const idParams = z.object({ id: z.string().uuid() }).strict();
 
+/**
+ * The scope `requireAdmin` resolved for this request.
+ *
+ * Throws rather than defaulting if it is missing. A missing scope means the
+ * guard did not run, and the safe response to that is to stop — quietly
+ * treating it as platform-wide would turn a wiring mistake into a data leak.
+ */
+function scope(request: FastifyRequest) {
+  const resolved = request.adminScope;
+  if (!resolved) {
+    throw new Error('admin scope missing — requireAdmin did not run on this route');
+  }
+  return resolved;
+}
+
 export async function adminRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', requireAdmin);
 
@@ -258,13 +279,28 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   // ─── Events ─────────────────────────────────────────────────────────────
 
-  app.get('/api/admin/events', async () => ({
-    events: await db.select().from(events).orderBy(desc(events.startsAt)),
+  app.get('/api/admin/events', async (request) => ({
+    events: await db
+      .select()
+      .from(events)
+      // The filter is unconditional in the code even though it is a no-op for
+      // the platform key — a branch here is how one of these listings ends up
+      // without it.
+      .where(eventScopeFilter(scope(request)))
+      .orderBy(desc(events.startsAt)),
   }));
 
   app.post('/api/admin/events', async (request, reply) => {
     const body = eventBody.parse(request.body);
-    const [created] = await db.insert(events).values(body).returning();
+
+    // An event is created into an organisation, never without one. The column
+    // is NOT NULL, so this is enforced by the schema rather than by review.
+    const organisationId = await organisationForNewEvent(scope(request));
+
+    const [created] = await db
+      .insert(events)
+      .values({ ...body, organisationId })
+      .returning();
     await invalidateEvent(created!.id, created!.slug);
 
     // Created already published — announce it.
@@ -279,8 +315,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const { id } = idParams.parse(request.params);
     const body = eventPatchBody.parse(request.body);
 
-    const [before] = await db.select().from(events).where(eq(events.id, id)).limit(1);
-    if (!before) throw notFound(`No event with id ${id}`);
+    const before = await loadScopedEvent(scope(request), id);
 
     const [updated] = await db
       .update(events)
@@ -327,8 +362,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const actor = adminActor(request);
     const body = reasonBody.parse(request.body ?? {});
 
-    const [event] = await db.select().from(events).where(eq(events.id, id)).limit(1);
-    if (!event) throw notFound(`No event with id ${id}`);
+    const event = await loadScopedEvent(scope(request), id);
 
     if (!hasFinished(event)) {
       // Archiving a future event would remove it from the listing while it is
@@ -374,8 +408,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const { id } = idParams.parse(request.params);
     const actor = adminActor(request);
 
-    const [event] = await db.select().from(events).where(eq(events.id, id)).limit(1);
-    if (!event) throw notFound(`No event with id ${id}`);
+    const event = await loadScopedEvent(scope(request), id);
 
     const restored = await withTransaction(async (tx) => {
       const [row] = await tx
@@ -413,8 +446,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const actor = adminActor(request);
     const body = reasonBody.parse(request.body ?? {});
 
-    const [event] = await db.select().from(events).where(eq(events.id, id)).limit(1);
-    if (!event) throw notFound(`No event with id ${id}`);
+    const event = await loadScopedEvent(scope(request), id);
 
     if (!hasFinished(event)) {
       throw conflict(
@@ -494,6 +526,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/admin/events/:id/tiers', async (request) => {
     const { id } = idParams.parse(request.params);
+    await assertEventInScope(scope(request), id);
     return {
       tiers: await db
         .select()
@@ -505,6 +538,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/api/admin/events/:id/tiers', async (request, reply) => {
     const { id } = idParams.parse(request.params);
+    await assertEventInScope(scope(request), id);
     const body = tierBody.parse(request.body);
 
     const [created] = await db
@@ -622,6 +656,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/admin/events/:id/orders', async (request) => {
     const { id } = idParams.parse(request.params);
+    await assertEventInScope(scope(request), id);
     const query = z
       .object({
         status: z
@@ -664,6 +699,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/admin/events/:id/buyers', async (request) => {
     const { id } = idParams.parse(request.params);
+    await assertEventInScope(scope(request), id);
     const query = z
       .object({
         limit: z.coerce.number().int().min(1).max(1_000).default(200),
@@ -749,6 +785,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/admin/events/:id/stats', async (request) => {
     const { id } = idParams.parse(request.params);
+    await assertEventInScope(scope(request), id);
 
     // `sum()` skips NULLs, so an uncapped tier would quietly vanish from the
     // capacity total and leave `available` overstating what is really left.
@@ -876,6 +913,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/admin/events/:id/payments', async (request) => {
     const { id } = idParams.parse(request.params);
+    await assertEventInScope(scope(request), id);
 
     return {
       payments: await db
@@ -911,8 +949,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       .strict()
       .parse(request.body ?? {});
 
-    const [event] = await db.select().from(events).where(eq(events.id, id)).limit(1);
-    if (!event) throw notFound(`No event with id ${id}`);
+    const event = await loadScopedEvent(scope(request), id);
 
     const minted = await mintScannerToken(id, body.gate, body.ttlHours);
 

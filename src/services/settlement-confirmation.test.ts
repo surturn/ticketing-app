@@ -9,6 +9,7 @@ import {
   ticketTiers,
   tickets,
   webhookEvents,
+  organisations,
 } from '../db/schema.js';
 import type { SettlementResult } from '../gateways/types.js';
 import { shouldRunDbTests } from '../test/disposable-db.js';
@@ -80,10 +81,20 @@ describe.skipIf(!enabled)('settlement confirmation', () => {
     await db.delete(orders);
     await db.delete(ticketTiers);
     await db.delete(events);
+    await db.delete(organisations);
+
+    const [org] = await db
+      .insert(organisations)
+      .values({
+        name: 'Test Org',
+        slug: `org-settle-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      })
+      .returning();
 
     const [event] = await db
       .insert(events)
       .values({
+        organisationId: org!.id,
         slug: `confirm-${Date.now()}`,
         name: 'Settlement Confirmation Event',
         startsAt: new Date(Date.now() + 86_400_000),
