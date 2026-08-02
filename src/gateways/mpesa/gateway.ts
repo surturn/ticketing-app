@@ -3,6 +3,7 @@ import { env, mpesaConfigured } from '../../config/env.js';
 import { badRequest } from '../../lib/errors.js';
 import { centsToMpesaAmount, mpesaAmountToCents } from '../../lib/money.js';
 import type {
+  CallbackAuthInput,
   ChargeRequest,
   ChargeResult,
   PaymentGateway,
@@ -97,6 +98,16 @@ export class MpesaGateway implements PaymentGateway {
       customerMessage: response.CustomerMessage,
       raw: response as unknown as Record<string, unknown>,
     };
+  }
+
+  /**
+   * Daraja cannot send a custom header, so the shared secret rides on the
+   * query string of the callback URL we registered with them. The raw body is
+   * not consulted — there is no signature to check against it.
+   */
+  authenticateCallback(input: CallbackAuthInput): boolean {
+    const token = input.query?.['token'];
+    return isValidCallbackToken(typeof token === 'string' ? token : undefined);
   }
 
   parseCallback(body: unknown): SettlementResult {

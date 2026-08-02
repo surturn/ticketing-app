@@ -7,7 +7,7 @@ import {
   MPESA_WEBHOOK_PATH,
 } from '../config/env.js';
 import type { InitiatorResultBody } from '../gateways/mpesa/daraja.js';
-import { isValidCallbackToken, mpesaGateway } from '../gateways/mpesa/gateway.js';
+import { getGateway } from '../gateways/registry.js';
 import { applySettlement, recordWebhookDelivery } from '../services/payments.service.js';
 
 // ---------------------------------------------------------------------------
@@ -38,9 +38,13 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
       },
     },
     async (request, reply) => {
-      const token = (request.query as { token?: string } | undefined)?.token;
+      // Authentication is the gateway's own business now, not this route's.
+      // Previously it imported the M-Pesa verifier directly, which meant the
+      // route knew which gateway it was serving and a second one would have
+      // had to branch here.
+      const gateway = getGateway('mpesa');
 
-      if (!isValidCallbackToken(token)) {
+      if (!gateway.authenticateCallback({ query: request.query as never, headers: request.headers })) {
         request.log.warn(
           { ip: request.ip },
           'rejected M-Pesa callback with a bad token',
@@ -52,7 +56,7 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
 
       let settlement;
       try {
-        settlement = mpesaGateway.parseCallback(request.body);
+        settlement = gateway.parseCallback(request.body);
       } catch (error) {
         request.log.error(
           { err: error, body: request.body },
@@ -122,9 +126,9 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
    */
   function registerInitiatorCallback(path: string, kind: string): void {
     app.post(path, { config: { rateLimit: false } }, async (request, reply) => {
-      const token = (request.query as { token?: string } | undefined)?.token;
+      const gateway = getGateway('mpesa');
 
-      if (!isValidCallbackToken(token)) {
+      if (!gateway.authenticateCallback({ query: request.query as never, headers: request.headers })) {
         request.log.warn({ ip: request.ip, kind }, 'rejected M-Pesa result with a bad token');
         return reply.status(200).send(ACK);
       }
