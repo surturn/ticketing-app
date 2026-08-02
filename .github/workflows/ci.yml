@@ -10,14 +10,26 @@
 #
 # Postgres is pinned to 18 to match production. A test suite passing against a
 # different major than the one deployed is a weaker signal than it looks.
+#
+# Promotion runs main <- staging <- feature. Work happens on a feature branch,
+# is promoted to `staging` where the full suite runs against a real database,
+# and only reaches `main` once it has passed there. So this workflow has to run
+# in three places, and they are not redundant:
+#
+#   * on a pull request, to gate the merge before it lands anywhere
+#   * on a push to `staging`, because that is the integration point — two
+#     branches that each passed alone can still fail together, and this is where
+#     that surfaces rather than in production
+#   * on a push to `main`, as the record of what was actually shipped
 # ---------------------------------------------------------------------------
 
 name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, staging]
   pull_request:
+    branches: [main, staging]
 
 # A second push to the same branch makes the first run irrelevant.
 concurrency:
