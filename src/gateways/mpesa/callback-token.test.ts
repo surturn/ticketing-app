@@ -75,6 +75,40 @@ describe('isValidCallbackToken', () => {
   });
 });
 
+describe('authenticateCallback', () => {
+  it('reaches the same verdict through the gateway interface', async () => {
+    // The route talks to the interface, not to the exported function, so the
+    // method is what actually guards production — testing only the function
+    // would leave the wiring unasserted.
+    const { mpesaGateway } = await loadWith(TOKEN);
+    const headers = {};
+
+    expect(
+      mpesaGateway.authenticateCallback({ query: { token: TOKEN }, headers }),
+    ).toBe(true);
+    expect(
+      mpesaGateway.authenticateCallback({ query: { token: 'wrong' }, headers }),
+    ).toBe(false);
+    expect(mpesaGateway.authenticateCallback({ query: {}, headers })).toBe(false);
+    expect(mpesaGateway.authenticateCallback({ query: undefined, headers })).toBe(false);
+  });
+
+  it('refuses a repeated query parameter rather than trusting the array', async () => {
+    const { mpesaGateway } = await loadWith(TOKEN);
+    // `?token=x&token=x` parses to an array; only a string may be compared.
+    expect(
+      mpesaGateway.authenticateCallback({ query: { token: [TOKEN] }, headers: {} }),
+    ).toBe(false);
+  });
+
+  it('fails closed when no token is configured', async () => {
+    const { mpesaGateway } = await loadWith(undefined);
+    expect(
+      mpesaGateway.authenticateCallback({ query: { token: TOKEN }, headers: {} }),
+    ).toBe(false);
+  });
+});
+
 describe('mpesaConfigured', () => {
   it('is false when a callback token is missing but everything else is set', async () => {
     vi.resetModules();
