@@ -125,6 +125,25 @@ const schema = z.object({
   // ─── Checkout ────────────────────────────────────────────────────
   ORDER_HOLD_MINUTES: z.coerce.number().int().positive().default(10),
 
+  /**
+   * How many unpaid holds one phone number may have at once.
+   *
+   * Held inventory that never pays is stock nobody else can buy, and holding it
+   * costs an attacker nothing: guest checkout needs only a well-formed name,
+   * email and number, and the per-IP limit is answered by using more IPs. This
+   * is the cap that a rotating address book of IPs does not get around, because
+   * it counts what is actually held rather than how fast it was requested.
+   *
+   * Three, because a real buyer occasionally has a second order open — a
+   * friend's ticket, a basket they abandoned and rebuilt — and almost never a
+   * fourth. Holds expire, so this is a ceiling on concurrency, not on how many
+   * tickets somebody may buy in an evening.
+   *
+   * It does not stop an attacker minting fresh numbers, and is not meant to.
+   * It removes the free version of the attack and makes the rest cost something.
+   */
+  MAX_ACTIVE_HOLDS_PER_PHONE: z.coerce.number().int().positive().default(3),
+
   // Days after an event finishes before it is archived out of the current
   // listing and into past events. Archiving never deletes anything.
   EVENT_ARCHIVE_AFTER_DAYS: z.coerce.number().int().positive().default(2),
