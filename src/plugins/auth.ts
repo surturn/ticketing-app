@@ -2,7 +2,8 @@ import crypto from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { SignJWT, jwtVerify } from 'jose';
 import { env, firebaseConfigured } from '../config/env.js';
-import { serviceUnavailable, unauthorized } from '../lib/errors.js';
+import { cacheRedis } from '../lib/redis.js';
+import { AppError, serviceUnavailable, unauthorized } from '../lib/errors.js';
 import {
   bearerToken,
   verifyIdToken,
@@ -85,30 +86,88 @@ export async function requireAdmin(
   throw unauthorized('A valid x-api-key header, or an admin account, is required');
 }
 
+/**
+ * Who performed an administrative action, for the ledger.
+ *
+ * The hash chain proves an entry was not altered after the fact. It cannot say
+ * who wrote it, and every entry said `admin` — so a void, a price change or a
+ * reopened sale was attributable to "whoever holds the key", which is everyone
+ * with the dashboard open. Integrity was covered; attribution was not, and
+ * attribution is the half somebody asks about afterwards.
+ *
+ * An allowlisted account signs its own actions. The shared key cannot be
+ * resolved to a person by definition, so it says so plainly rather than
+ * implying an identity it does not have.
+ */
+export function adminActor(request: FastifyRequest): string {
+  return request.user?.email ? `admin:${request.user.email}` : 'admin:api-key';
+}
+
 // ─── Scanner tokens ────────────────────────────────────────────────────────
 
 export interface ScannerClaims {
   role: 'scanner';
   eventId: string;
   gate: string;
+  /** This token's own id, so one device can be shut out without the rest. */
+  jti: string;
 }
 
 const scannerSecret = new TextEncoder().encode(env.SCANNER_JWT_SECRET);
+
+/**
+ * Redis key for a revoked scanner token.
+ *
+ * Namespaced under the configured prefix like everything else, so a shared
+ * Redis between environments cannot have one deployment's revocations silently
+ * apply to another's tokens.
+ */
+const revokedKey = (jti: string) => `${env.REDIS_PREFIX}:scanner:revoked:${jti}`;
 
 export async function mintScannerToken(
   eventId: string,
   gate: string,
   ttlHours = 12,
-): Promise<{ token: string; expiresAt: Date }> {
+): Promise<{ token: string; expiresAt: Date; jti: string }> {
   const expiresAt = new Date(Date.now() + ttlHours * 3_600_000);
+
+  /**
+   * A per-token id, which is what makes revocation possible at all.
+   *
+   * Without one, the only way to shut out a phone left in a taxi is to rotate
+   * `SCANNER_JWT_SECRET` — which invalidates every gate at the same venue,
+   * mid-event, and is precisely the sort of remedy nobody reaches for while a
+   * queue is forming. A `jti` turns that into one line in a denylist.
+   */
+  const jti = crypto.randomUUID();
 
   const token = await new SignJWT({ role: 'scanner', eventId, gate })
     .setProtectedHeader({ alg: 'HS256' })
+    .setJti(jti)
     .setIssuedAt()
     .setExpirationTime(Math.floor(expiresAt.getTime() / 1000))
     .sign(scannerSecret);
 
-  return { token, expiresAt };
+  return { token, expiresAt, jti };
+}
+
+/**
+ * Shuts out one scanner token.
+ *
+ * The denylist entry expires when the token would have anyway. A revocation
+ * has no meaning past that point — the signature stops being accepted on its
+ * own — so keeping the key would only grow the set forever.
+ *
+ * `ttlSeconds` is derived from the token's own expiry by the caller. A token
+ * already past expiry is accepted here and simply writes nothing.
+ */
+export async function revokeScannerToken(
+  jti: string,
+  ttlSeconds: number,
+): Promise<{ revoked: boolean }> {
+  if (ttlSeconds <= 0) return { revoked: false };
+  await cacheRedis.set(revokedKey(jti), '1', 'EX', Math.ceil(ttlSeconds));
+  return { revoked: true };
 }
 
 declare module 'fastify' {
@@ -189,17 +248,51 @@ export async function requireScanner(
     throw unauthorized('A scanner token is required');
   }
 
+  let claims: ScannerClaims;
+
   try {
     const { payload } = await jwtVerify(header.slice(7), scannerSecret);
     if (payload.role !== 'scanner') {
       throw unauthorized('That token is not a scanner token');
     }
-    request.scanner = {
+    if (!payload.jti) {
+      // Minted before tokens carried an id. Refused rather than trusted: an
+      // unrevocable credential at a gate is exactly what this is meant to end,
+      // and the fix is to issue a new one, which takes seconds.
+      throw unauthorized('That scanner token predates revocation support');
+    }
+    claims = {
       role: 'scanner',
       eventId: String(payload.eventId),
       gate: String(payload.gate ?? 'main'),
+      jti: String(payload.jti),
     };
   } catch {
     throw unauthorized('Scanner token is invalid or has expired');
   }
+
+  /**
+   * Checked after the signature, and outside the try above.
+   *
+   * Outside, because a Redis failure must not be swallowed by the same catch
+   * that reports a bad signature — those are different problems and conflating
+   * them would have a Redis outage look like a forged token to whoever is
+   * standing at the door.
+   *
+   * The check fails *open* on a Redis error. That is the opposite of the
+   * webhook token's rule, and deliberately so: the credential here has already
+   * been cryptographically verified and is short-lived, the failure mode of
+   * closing is a queue of paying guests who cannot get into an event, and a
+   * revoked device is a narrower risk than a gate that stops working.
+   */
+  try {
+    if (await cacheRedis.get(revokedKey(claims.jti))) {
+      throw unauthorized('That scanner token has been revoked');
+    }
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    request.log.error({ err: error }, 'could not check scanner revocation; allowing');
+  }
+
+  request.scanner = claims;
 }
