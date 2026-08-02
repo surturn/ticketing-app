@@ -20,6 +20,7 @@ import { formatCountdown, formatMoney } from '@/lib/format';
 import { useAsync } from '@/lib/useAsync';
 import { TicketStub } from '@/components/TicketStub';
 import { Button, ButtonLink, Card, ErrorState, Skeleton } from '@/components/ui';
+import { LeaveCheckoutDialog } from '@/components/LeaveCheckoutDialog';
 
 /** Poll interval while a payment is in flight. */
 const POLL_MS = 3000;
@@ -356,8 +357,23 @@ export function OrderPage() {
 
   const paid = order.status === 'paid';
 
+  /**
+   * The seats are genuinely reserved, and the clock is genuinely running.
+   *
+   * Both conditions are required. `awaiting_payment` alone is not enough — an
+   * order whose hold has already lapsed has nothing left to lose, and warning
+   * someone about seats that are already back on sale would be telling them
+   * something untrue to keep them on the page.
+   */
+  const holdIsLive =
+    order.status === 'awaiting_payment' &&
+    order.expiresAt !== null &&
+    new Date(order.expiresAt).getTime() > Date.now();
+
   return (
     <div className="mx-auto max-w-2xl">
+      <LeaveCheckoutDialog active={holdIsLive} expiresAt={order.expiresAt} />
+
       <AnimatePresence mode="wait">
         {paid ? (
           <motion.div

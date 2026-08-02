@@ -8,6 +8,7 @@
  * system stays consistent once more than one person is editing it.
  */
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react';
+import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 
 function cx(...parts: (string | false | null | undefined)[]): string {
@@ -99,7 +100,28 @@ const VARIANT: Record<ButtonVariant, string> = {
   danger: 'bg-error-container text-on-error-container',
 };
 
-interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+/**
+ * Framer defines its own `onDrag*` and `onAnimation*` with different signatures
+ * from the DOM ones, so the two sets cannot both be in scope. None of them are
+ * used on a button; dropping the DOM versions is what lets `motion.button`
+ * accept the rest of the native props unchanged.
+ */
+type NativeButtonProps = Omit<
+  ButtonHTMLAttributes<HTMLButtonElement>,
+  | 'onDrag'
+  | 'onDragStart'
+  | 'onDragEnd'
+  | 'onDragEnter'
+  | 'onDragExit'
+  | 'onDragLeave'
+  | 'onDragOver'
+  | 'onDrop'
+  | 'onAnimationStart'
+  | 'onAnimationEnd'
+  | 'onAnimationIteration'
+>;
+
+interface ButtonProps extends NativeButtonProps {
   variant?: ButtonVariant;
   busy?: boolean;
   busyLabel?: string;
@@ -119,7 +141,22 @@ export function Button({
   ...rest
 }: ButtonProps) {
   return (
-    <button
+    /**
+     * Presses in slightly under the finger.
+     *
+     * On a phone the tap target is under the thumb at the moment it is pressed,
+     * so the buyer cannot see the state layer they just triggered — the visual
+     * feedback is hidden by the hand causing it. A brief scale is felt at the
+     * edges of the control instead, which is the part still visible.
+     *
+     * `whileTap` only, no hover: hover on a touch screen means a sticky state
+     * left behind after a tap. Framer respects `prefers-reduced-motion` for
+     * transforms it drives, and this is a 60ms scale rather than movement
+     * across the screen, so it stays within what that setting is about.
+     */
+    <motion.button
+      whileTap={disabled || busy ? undefined : { scale: 0.95 }}
+      transition={{ type: 'spring', stiffness: 600, damping: 30 }}
       {...rest}
       disabled={disabled || busy}
       aria-busy={busy || undefined}
@@ -140,7 +177,7 @@ export function Button({
       <StateLayer />
       {busy ? <Spinner /> : icon}
       <span className="relative">{busy && busyLabel ? busyLabel : children}</span>
-    </button>
+    </motion.button>
   );
 }
 
