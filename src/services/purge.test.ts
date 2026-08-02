@@ -10,6 +10,7 @@ import {
   tickets,
 } from '../db/schema.js';
 import { purgeAbandonedOrders } from './purge.service.js';
+import { shouldRunDbTests } from '../test/disposable-db.js';
 
 // ---------------------------------------------------------------------------
 // This is the only code in the system that deletes anything, so the tests that
@@ -18,7 +19,7 @@ import { purgeAbandonedOrders } from './purge.service.js';
 // somebody asks where their payment record went.
 // ---------------------------------------------------------------------------
 
-const enabled = process.env.RUN_DB_TESTS === 'true';
+const enabled = shouldRunDbTests();
 const DAY = 86_400_000;
 
 describe.skipIf(!enabled)('purging abandoned orders', () => {
@@ -109,7 +110,6 @@ describe.skipIf(!enabled)('purging abandoned orders', () => {
         orderItemId: item!.id,
         tierId,
         code: `TKT${Math.random().toString(36).slice(2, 10).toUpperCase()}`,
-        signature: 'test-signature',
         // "Ticket 1 of 2" on the stub — not-null, so the fixture supplies it.
         sequence: 1,
       });

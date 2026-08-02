@@ -1,0 +1,98 @@
+# ---------------------------------------------------------------------------
+# The point of this workflow is the database-backed suites.
+#
+# Oversell under concurrency, the append-only ledger, what the purge refuses to
+# delete, and whether a forged settlement is refused are all assertions about
+# Postgres behaviour rather than about TypeScript. They were written to need a
+# real database, which meant they only ran when somebody remembered to start one
+# and set RUN_DB_TESTS — so in practice the guarantees that matter most were the
+# ones least often checked.
+#
+# Postgres is pinned to 18 to match production. A test suite passing against a
+# different major than the one deployed is a weaker signal than it looks.
+# ---------------------------------------------------------------------------
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A second push to the same branch makes the first run irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: ticketing
+          POSTGRES_PASSWORD: ticketing
+          # The name matters: the destructive suites refuse to run against a
+          # database not marked as disposable. See src/test/disposable-db.ts.
+          POSTGRES_DB: ticketing_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U ticketing"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:8-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://ticketing:ticketing@localhost:5432/ticketing_test
+      REDIS_URL: redis://localhost:6379
+      # Test values only. The schema enforces minimum lengths, so these have to
+      # be long enough to parse — they authenticate nothing.
+      TICKET_SIGNING_SECRET: ci-ticket-signing-secret-at-least-32-chars
+      SCANNER_JWT_SECRET: ci-scanner-jwt-secret-at-least-32-characters
+      ADMIN_API_KEY: ci-admin-api-key-value
+      REDIS_PREFIX: ticketing-ci
+      LOG_LEVEL: silent
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      # Typecheck before tests: a type error is cheaper to read here than as a
+      # runtime failure inside a suite.
+      - name: Typecheck the API
+        run: npm run typecheck
+
+      - name: Typecheck the storefront
+        working-directory: web
+        run: npm ci && npx tsc --noEmit
+
+      - name: Apply migrations
+        run: npm run db:migrate
+
+      # RUN_DB_TESTS is what makes this workflow worth having. Without it the
+      # suites that need Postgres skip silently and the run stays green while
+      # asserting almost nothing.
+      - name: Test
+        run: npm test
+        env:
+          RUN_DB_TESTS: 'true'

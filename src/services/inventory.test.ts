@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { closeDatabase, db, withTransaction } from '../db/client.js';
 import { events, orderItems, orders, ticketTiers, tickets } from '../db/schema.js';
+import { shouldRunDbTests } from '../test/disposable-db.js';
 import {
   explainReservationFailure,
   releaseOrder,
@@ -18,7 +19,7 @@ import {
 // Point DATABASE_URL at a throwaway database: this truncates tables.
 // ---------------------------------------------------------------------------
 
-const enabled = process.env.RUN_DB_TESTS === 'true';
+const enabled = shouldRunDbTests();
 
 describe.skipIf(!enabled)('inventory concurrency', () => {
   let eventId: string;
