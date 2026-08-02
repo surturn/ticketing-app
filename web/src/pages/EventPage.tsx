@@ -11,10 +11,13 @@ import {
   ApiError,
   createCheckout,
   fetchEvent,
+  fieldErrors,
   previewCheckout,
   type PreviewResponse,
   type Tier,
 } from '@/lib/api';
+import { LocalErrorBoundary } from '@/components/LocalErrorBoundary';
+import { useToast } from '@/components/Toasts';
 import { availabilityLabel, formatEventDate, formatMoney } from '@/lib/format';
 import { useAsync } from '@/lib/useAsync';
 import { RichText } from '@/components/RichText';
@@ -171,6 +174,7 @@ export function EventPage() {
   const { data, loading, error, reload } = useAsync(() => fetchEvent(slug), [slug]);
   const event = data?.event;
 
+  const { notify } = useToast();
   const [basket, setBasket] = useState<Record<string, number>>({});
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -181,6 +185,8 @@ export function EventPage() {
   const [preview, setPreview] = useState<PreviewResponse | null>(null);
   const [working, setWorking] = useState<'preview' | 'paying' | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
+  /** Per-field objections from the server, keyed by field name. */
+  const [serverErrors, setServerErrors] = useState<Record<string, string>>({});
 
   // Both start false and stay false until tapped. Consent has to be an act the
   // buyer took, so neither box is ever pre-ticked.
@@ -227,16 +233,33 @@ export function EventPage() {
 
   const ticketCount = items.reduce((sum, item) => sum + item.quantity, 0);
 
+  /**
+   * Client checks first, then whatever the server objected to.
+   *
+   * The local rules are for the obvious cases and run on blur, so a buyer is not
+   * told they are wrong halfway through typing. `serverErrors` fills in what
+   * only the server can know — a domain that does not accept mail, a number
+   * outside the ranges Safaricom issues — and it is applied per field rather
+   * than as a banner, because "the request is not valid" above five inputs
+   * leaves the buyer to guess which one to fix.
+   */
   const errors = {
-    name: touched.name && name.trim().length < 2 ? 'Please enter your full name.' : null,
+    name:
+      (touched.name && name.trim().length < 2 ? 'Please enter your full name.' : null) ??
+      serverErrors.name ??
+      null,
     email:
-      touched.email && !EMAIL.test(email.trim())
+      (touched.email && !EMAIL.test(email.trim())
         ? 'That address looks incomplete — check for a missing letter.'
-        : null,
+        : null) ??
+      serverErrors.email ??
+      null,
     phone:
-      touched.phone && !PHONE.test(normalisePhoneForDisplay(phone))
+      (touched.phone && !PHONE.test(normalisePhoneForDisplay(phone))
         ? 'Use the number your M-Pesa is on, like 0712 345 678.'
-        : null,
+        : null) ??
+      serverErrors.phone ??
+      null,
   };
 
   const detailsComplete =
@@ -252,13 +275,27 @@ export function EventPage() {
 
   async function handleReview() {
     setFailure(null);
+    setServerErrors({});
     setWorking('preview');
     try {
       setPreview(await previewCheckout({ eventSlug: slug, items, buyer }));
     } catch (caught) {
-      setFailure(
-        caught instanceof ApiError ? caught.message : 'We could not price that basket.',
-      );
+      const perField = fieldErrors(caught);
+      setServerErrors(perField);
+
+      // A banner only for what could not be attached to an input. When every
+      // objection has a field, repeating it above the form is noise.
+      if (Object.keys(perField).length === 0) {
+        setFailure(
+          caught instanceof ApiError ? caught.message : 'We could not price that basket.',
+        );
+      }
+
+      // A basket that cannot be priced is not the buyer's fault and not
+      // something they can read off a field, so it is worth saying out loud.
+      if (!(caught instanceof ApiError)) {
+        notify('We could not reach the server. Check your connection and try again.');
+      }
     } finally {
       setWorking(null);
     }
@@ -272,6 +309,7 @@ export function EventPage() {
 
     setFailure(null);
     setTermsError(null);
+    setServerErrors({});
     setWorking('paying');
     try {
       const order = await createCheckout(
@@ -288,11 +326,29 @@ export function EventPage() {
       // already on the buyer's handset by the time this navigates.
       navigate(`/orders/${order.reference}`, { state: { justCreated: true } });
     } catch (caught) {
-      setFailure(
-        caught instanceof ApiError
-          ? caught.message
-          : 'We could not start that payment. Please try again.',
-      );
+      /**
+       * Nothing is cleared here, and that is the point.
+       *
+       * The basket, the name, the email and the number all stay exactly as
+       * typed. A buyer whose payment failed on a phone in a queue will not
+       * retype three fields to try again — they leave. Re-entering the details
+       * is a far larger tax than the failure itself.
+       */
+      const perField = fieldErrors(caught);
+      setServerErrors(perField);
+
+      if (Object.keys(perField).length === 0) {
+        setFailure(
+          caught instanceof ApiError
+            ? caught.message
+            : 'We could not start that payment. Please try again.',
+        );
+      }
+
+      if (!(caught instanceof ApiError)) {
+        notify('We could not reach the server. Your details are still here — try again.');
+      }
+
       setWorking(null);
     }
   }
@@ -478,7 +534,15 @@ export function EventPage() {
               {/* The priced, normalised confirmation. This is where a mistyped
                   phone number surfaces — as the number it will actually be, not
                   as the buyer typed it. */}
+              {/* Wrapped because it renders server-shaped money and a list of
+                  issues — the two things most likely to arrive in a form this
+                  component did not expect. A throw here would otherwise take the
+                  whole event page down, including the tiers the buyer came for. */}
               {preview && (
+                <LocalErrorBoundary
+                  label="the price summary"
+                  onRetry={() => setPreview(null)}
+                >
                 <div className="mt-5 rounded-sm border border-outline-variant bg-surface p-4">
                   <p className="md-body-medium text-on-surface-variant">
                     Charging{' '}
@@ -502,6 +566,7 @@ export function EventPage() {
                     </ul>
                   )}
                 </div>
+                </LocalErrorBoundary>
               )}
 
               {failure && (

@@ -28,6 +28,38 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Pulls per-field messages out of a validation failure.
+ *
+ * The API's `details` on a 400 is the list of Zod issues, each with a `path`
+ * like `buyer.email` — it is shaped this way precisely so a form can put the
+ * message against the field that caused it rather than showing one banner for
+ * the whole submission. Without this the buyer is told "the request is not
+ * valid" and left to guess which of five inputs to look at.
+ *
+ * Keyed on the last path segment, because the form's field names are flat
+ * (`email`) while the request nests them (`buyer.email`).
+ */
+export function fieldErrors(error: unknown): Record<string, string> {
+  if (!(error instanceof ApiError)) return {};
+  if (!Array.isArray(error.details)) return {};
+
+  const out: Record<string, string> = {};
+
+  for (const issue of error.details) {
+    const { path, message } =
+      (issue as { path?: unknown; message?: unknown }) ?? {};
+    if (typeof path !== 'string' || typeof message !== 'string') continue;
+
+    const field = path.split('.').pop();
+    // First message per field wins. Zod can report several for one input, and
+    // stacking them under a text box is less useful than the first thing wrong.
+    if (field && !(field in out)) out[field] = message;
+  }
+
+  return out;
+}
+
 interface RequestOptions extends Omit<RequestInit, 'body'> {
   body?: unknown;
   /**
