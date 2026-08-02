@@ -23,12 +23,18 @@ import {
 import { logger } from '../lib/logger.js';
 import { boundedMultilineText, boundedText } from '../lib/validation.js';
 import { env } from '../config/env.js';
-import { mintScannerToken, requireAdmin } from '../plugins/auth.js';
+import {
+  adminActor,
+  mintScannerToken,
+  requireAdmin,
+  revokeScannerToken,
+} from '../plugins/auth.js';
 import { enqueueEventAnnouncement } from '../queue/queues.js';
 import { archivePastEvents } from '../services/events.service.js';
 import {
   getOrderHistory,
   getRecentEntries,
+  recordStandaloneTransition,
   recordTransition,
   verifyChain,
 } from '../services/ledger.service.js';
@@ -318,6 +324,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/api/admin/events/:id/archive', async (request) => {
     const { id } = idParams.parse(request.params);
+    const actor = adminActor(request);
     const body = reasonBody.parse(request.body ?? {});
 
     const [event] = await db.select().from(events).where(eq(events.id, id)).limit(1);
@@ -351,7 +358,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         event: 'event.archived',
         fromState: 'listed',
         toState: 'archived',
-        actor: 'admin',
+        actor,
         eventId: id,
         detail: { slug: event.slug, name: event.name, reason: body.reason ?? null },
       });
@@ -365,6 +372,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/api/admin/events/:id/unarchive', async (request) => {
     const { id } = idParams.parse(request.params);
+    const actor = adminActor(request);
 
     const [event] = await db.select().from(events).where(eq(events.id, id)).limit(1);
     if (!event) throw notFound(`No event with id ${id}`);
@@ -382,7 +390,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         event: 'event.unarchived',
         fromState: 'archived',
         toState: 'listed',
-        actor: 'admin',
+        actor,
         eventId: id,
         detail: { slug: event.slug, name: event.name },
       });
@@ -402,6 +410,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   app.delete('/api/admin/events/:id', async (request) => {
     const { id } = idParams.parse(request.params);
+    const actor = adminActor(request);
     const body = reasonBody.parse(request.body ?? {});
 
     const [event] = await db.select().from(events).where(eq(events.id, id)).limit(1);
@@ -458,7 +467,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         event: 'event.deleted',
         fromState: event.archivedAt ? 'archived' : 'listed',
         toState: 'deleted',
-        actor: 'admin',
+        actor,
         eventId: id,
         detail: {
           slug: event.slug,
@@ -535,7 +544,12 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   // Tickets already sold are untouched. Closing stops new reservations; it does
   // not cancel anything.
 
-  async function setTierSalesClosed(tierId: string, closed: boolean, reason?: string) {
+  async function setTierSalesClosed(
+    tierId: string,
+    closed: boolean,
+    actor: string,
+    reason?: string,
+  ) {
     const [tier] = await db
       .select()
       .from(ticketTiers)
@@ -559,7 +573,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         event: closed ? 'inventory.sales_closed' : 'inventory.sales_reopened',
         fromState: tier.status,
         toState: nextStatus,
-        actor: 'admin',
+        actor,
         eventId: tier.eventId,
         detail: {
           tierName: tier.name,
@@ -586,7 +600,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/admin/tiers/:id/close-sales', async (request) => {
     const { id } = idParams.parse(request.params);
     const body = closeBody.parse(request.body ?? {});
-    const tier = await setTierSalesClosed(id, true, body.reason);
+    const tier = await setTierSalesClosed(id, true, adminActor(request), body.reason);
 
     return {
       tier,
@@ -600,7 +614,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/admin/tiers/:id/reopen-sales', async (request) => {
     const { id } = idParams.parse(request.params);
     const body = closeBody.parse(request.body ?? {});
-    const tier = await setTierSalesClosed(id, false, body.reason);
+    const tier = await setTierSalesClosed(id, false, adminActor(request), body.reason);
     return { tier, buyersSee: 'on sale' };
   });
 
@@ -900,7 +914,75 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const [event] = await db.select().from(events).where(eq(events.id, id)).limit(1);
     if (!event) throw notFound(`No event with id ${id}`);
 
-    return mintScannerToken(id, body.gate, body.ttlHours);
+    const minted = await mintScannerToken(id, body.gate, body.ttlHours);
+
+    // The id is returned alongside the token because it is what revocation
+    // needs, and the token itself will have been handed to a phone by then —
+    // an organiser who wants to shut one device out should not have to get the
+    // credential back from the person holding it.
+    await recordStandaloneTransition({
+      entity: 'event',
+      entityId: id,
+      event: 'scanner.token_issued',
+      fromState: null,
+      toState: 'issued',
+      actor: adminActor(request),
+      eventId: id,
+      detail: { jti: minted.jti, gate: body.gate, expiresAt: minted.expiresAt.toISOString() },
+    });
+
+    return minted;
+  });
+
+  /**
+   * Shuts out one scanner token.
+   *
+   * The case this exists for is a phone left in a taxi during an event. Before
+   * this, the only remedy was rotating `SCANNER_JWT_SECRET`, which invalidates
+   * every gate at the venue at once — a remedy nobody reaches for while a queue
+   * is forming, which meant in practice the lost device kept working.
+   *
+   * Takes the token id rather than the token: the credential is on the device
+   * that has gone, and the id was returned when it was issued.
+   */
+  app.post('/api/admin/scanner-tokens/:jti/revoke', async (request) => {
+    const { jti } = z
+      .object({ jti: z.string().uuid('must be a scanner token id') })
+      .strict()
+      .parse(request.params);
+
+    const body = z
+      .object({
+        // Bounded by the longest token this service will mint, so a typo cannot
+        // pin a denylist entry in Redis for a year.
+        remainingHours: z.number().min(0).max(72).default(72),
+        reason: boundedText(1, 300).optional(),
+      })
+      .strict()
+      .parse(request.body ?? {});
+
+    const result = await revokeScannerToken(jti, body.remainingHours * 3_600);
+
+    await recordStandaloneTransition({
+      entity: 'event',
+      entityId: jti,
+      event: 'scanner.token_revoked',
+      fromState: 'issued',
+      toState: 'revoked',
+      actor: adminActor(request),
+      detail: { jti, reason: body.reason ?? null, applied: result.revoked },
+    });
+
+    logger.warn({ jti, actor: adminActor(request) }, 'scanner token revoked');
+
+    return {
+      ...result,
+      jti,
+      // Said plainly, because "revoked" without a horizon invites the
+      // assumption that it is permanent — it lasts as long as the token would
+      // have, after which the signature stops being accepted on its own.
+      effectiveForHours: body.remainingHours,
+    };
   });
 
   app.post('/api/admin/tickets/:code/void', async (request) => {
@@ -924,7 +1006,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     // The actor is recorded in the ledger, so voiding is attributable rather
     // than anonymous. There is one admin key today; when there are several this
     // is where the key's identity belongs.
-    await voidTicket(code, body.reason, 'admin');
+    await voidTicket(code, body.reason, adminActor(request));
     return { voided: true, code };
   });
 
