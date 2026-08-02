@@ -3,12 +3,13 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { SignJWT, jwtVerify } from 'jose';
 import { env, firebaseConfigured } from '../config/env.js';
 import { cacheRedis } from '../lib/redis.js';
-import { AppError, serviceUnavailable, unauthorized } from '../lib/errors.js';
+import { AppError, forbidden, serviceUnavailable, unauthorized } from '../lib/errors.js';
 import {
   bearerToken,
   verifyIdToken,
   type AuthenticatedUser,
 } from '../lib/firebase.js';
+import { scopeForUser, type AdminScope } from '../services/tenancy.service.js';
 
 // ---------------------------------------------------------------------------
 // Three kinds of caller, deliberately unable to impersonate each other:
@@ -57,6 +58,10 @@ export async function requireAdmin(
   // to, and what a deployment with no allowlist uses exclusively.
   const provided = request.headers['x-api-key'];
   if (typeof provided === 'string' && safeEqual(provided, env.ADMIN_API_KEY)) {
+    // The shared key is platform-wide, as it has always been. Stated here as a
+    // scope rather than left implicit, so the routes downstream read the same
+    // way for both kinds of caller.
+    request.adminScope = { kind: 'platform' };
     return;
   }
 
@@ -74,7 +79,24 @@ export async function requireAdmin(
     try {
       const user = await verifyIdToken(token);
       if (isAllowlistedAdmin(user)) {
+        /**
+         * Allowlisted, and therefore an administrator — of something.
+         *
+         * Membership decides what. An address on the allowlist with no
+         * organisation has proved who it is and has nothing to manage, which is
+         * a 403 rather than a 401: retrying with a better token will not help,
+         * and saying "sign in" to somebody already signed in sends them round a
+         * loop.
+         */
+        const scope = await scopeForUser(user.uid);
+        if (!scope) {
+          throw forbidden(
+            'This account is not a member of any organisation. Ask an owner to add you.',
+          );
+        }
+
         request.user = user;
+        request.adminScope = scope;
         return;
       }
     } catch {
@@ -174,6 +196,8 @@ declare module 'fastify' {
   interface FastifyRequest {
     scanner?: ScannerClaims;
     user?: AuthenticatedUser;
+    /** Set by `requireAdmin`, so every admin route has one by construction. */
+    adminScope?: AdminScope;
   }
 }
 

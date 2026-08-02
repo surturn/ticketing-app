@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { closeDatabase, db } from './client.js';
-import { events, ticketTiers } from './schema.js';
+import { events, organisations, ticketTiers } from './schema.js';
+import { DEFAULT_ORGANISATION_SLUG } from '../services/tenancy.service.js';
 import { logger } from '../lib/logger.js';
 
 // Creates one published event with three tiers, so the API can be exercised
@@ -20,9 +21,25 @@ async function main(): Promise<void> {
     return;
   }
 
+  // Events need an owner. The migration creates this organisation; seeding
+  // against a database that has not been migrated should fail loudly here
+  // rather than invent one.
+  const [organisation] = await db
+    .select({ id: organisations.id })
+    .from(organisations)
+    .where(eq(organisations.slug, DEFAULT_ORGANISATION_SLUG))
+    .limit(1);
+
+  if (!organisation) {
+    throw new Error(
+      `No "${DEFAULT_ORGANISATION_SLUG}" organisation — run the migrations first`,
+    );
+  }
+
   const [event] = await db
     .insert(events)
     .values({
+      organisationId: organisation.id,
       slug: SLUG,
       name: 'Sample Summit 2026',
       description: 'A seeded event for exercising the ticketing API.',

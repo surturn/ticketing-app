@@ -8,6 +8,7 @@ import {
   jsonb,
   pgEnum,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -191,14 +192,77 @@ export const subscribers = pgTable(
 );
 
 // ---------------------------------------------------------------------------
-// events — one row per ticketed event. This service is multi-tenant by event,
-// so a single instance backs every site in the template portfolio.
+// organisations — who an event belongs to.
+//
+// Everything in this schema hangs off `events`: tiers, orders, tickets and
+// payments all reach an owner through the event they were sold for. That makes
+// `events.organisation_id` the single place tenancy has to be enforced, and the
+// reason this table exists before there is a second organiser rather than
+// after. Retrofitting an owner column onto a live orders table is a migration
+// with money in it; adding one now is a default value.
+//
+// There is exactly one row today. The point is not to have several — it is that
+// the column, the foreign key and the scope check exist, so onboarding a second
+// organiser is configuration rather than an audit of every admin route.
+// ---------------------------------------------------------------------------
+
+export const organisations = pgTable('organisations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull(),
+  /** URL-safe handle, for when organisers get their own pages. */
+  slug: text('slug').notNull().unique(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * Which accounts may administer which organisation.
+ *
+ * Keyed on the Firebase uid, like `users.id`, and deliberately *not* a foreign
+ * key to it: an organiser can be granted access before they have ever signed
+ * in, and a `users` row only appears on first sign-in. Requiring the row first
+ * would make granting access depend on the grantee happening to have logged in,
+ * which is the wrong order for an invitation.
+ */
+export const organisationMembers = pgTable(
+  'organisation_members',
+  {
+    organisationId: uuid('organisation_id')
+      .notNull()
+      .references(() => organisations.id, { onDelete: 'cascade' }),
+    userId: text('user_id').notNull(),
+    role: text('role', { enum: ['owner', 'staff'] })
+      .notNull()
+      .default('staff'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.organisationId, table.userId] }),
+    index('organisation_members_user_idx').on(table.userId),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// events — one row per ticketed event, owned by exactly one organisation.
 // ---------------------------------------------------------------------------
 
 export const events = pgTable(
   'events',
   {
     id: uuid('id').primaryKey().defaultRandom(),
+
+    /**
+     * The owning organisation.
+     *
+     * `restrict` rather than `cascade`: deleting an organisation must not take
+     * its events — and therefore its orders, its tickets and the record of
+     * money that moved — with it. Anything that removes an organisation has to
+     * deal with what it sold first, deliberately.
+     */
+    organisationId: uuid('organisation_id')
+      .notNull()
+      .references(() => organisations.id, { onDelete: 'restrict' }),
+
     slug: text('slug').notNull(),
     name: text('name').notNull(),
     description: text('description'),

@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { closeDatabase, db } from '../db/client.js';
-import { events, orderItems, orders, ticketTiers, tickets } from '../db/schema.js';
+import { events, organisations, orderItems, orders, ticketTiers, tickets } from '../db/schema.js';
 import { shouldRunDbTests } from '../test/disposable-db.js';
 
 /**
@@ -58,10 +58,20 @@ describe.skipIf(!enabled)('active hold capacity', () => {
     await db.delete(orders);
     await db.delete(ticketTiers);
     await db.delete(events);
+    await db.delete(organisations);
+
+    const [org] = await db
+      .insert(organisations)
+      .values({
+        name: 'Test Org',
+        slug: `org-holds-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      })
+      .returning();
 
     const [event] = await db
       .insert(events)
       .values({
+        organisationId: org!.id,
         slug: `holds-${Date.now()}`,
         name: 'Hold Capacity Event',
         startsAt: new Date(Date.now() + 86_400_000),

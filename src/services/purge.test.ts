@@ -8,6 +8,7 @@ import {
   payments,
   ticketTiers,
   tickets,
+  organisations,
 } from '../db/schema.js';
 import { purgeAbandonedOrders } from './purge.service.js';
 import { shouldRunDbTests } from '../test/disposable-db.js';
@@ -33,10 +34,20 @@ describe.skipIf(!enabled)('purging abandoned orders', () => {
     await db.delete(orders);
     await db.delete(ticketTiers);
     await db.delete(events);
+    await db.delete(organisations);
+
+    const [org] = await db
+      .insert(organisations)
+      .values({
+        name: 'Test Org',
+        slug: `org-purge-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      })
+      .returning();
 
     const [event] = await db
       .insert(events)
       .values({
+        organisationId: org!.id,
         slug: `purge-${Date.now()}`,
         name: 'Purge Test Event',
         startsAt: new Date(Date.now() + DAY),
