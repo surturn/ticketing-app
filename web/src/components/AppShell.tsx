@@ -171,7 +171,9 @@ function FirstSignInWelcome() {
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { status, user, accountsAvailable } = useAuth();
+  // `user` is no longer read here: the account link names its destination
+  // rather than the person signed into it.
+  const { status, accountsAvailable } = useAuth();
 
   return (
     <div className="flex min-h-dvh flex-col">
@@ -212,12 +214,17 @@ export function AppShell({ children }: { children: ReactNode }) {
             {accountsAvailable &&
               (status === 'signed-in' ? (
                 <NavLink to="/account" className={navClass}>
-                  {/* The buyer's own name is the most recognisable label there
-                      is; the email is the fallback, truncated rather than
-                      allowed to push the nav around. */}
-                  <span className="max-w-[10rem] truncate">
-                    {user?.displayName?.split(' ')[0] ?? 'My tickets'}
-                  </span>
+                  {/* Names the destination, not the person.
+
+                      The first name was the more personal label and the less
+                      useful one: it told a buyer who they were, which they
+                      knew, while leaving what sits behind the link to be
+                      guessed. Someone who has just paid is looking for their
+                      tickets, and "Events / My tickets / Host an event" reads
+                      as three places to go rather than two places and a
+                      greeting. It also stops the bar changing width with the
+                      length of whoever is signed in. */}
+                  My tickets
                 </NavLink>
               ) : (
                 // A button, not a text link. Signing in is one of the two things
