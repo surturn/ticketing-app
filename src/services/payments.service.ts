@@ -11,7 +11,7 @@ import {
   enqueueTicketIssuance,
 } from '../queue/queues.js';
 import { commitOrder, releaseOrder } from './inventory.service.js';
-import { recordTransition } from './ledger.service.js';
+import { recordStandaloneTransition, recordTransition } from './ledger.service.js';
 
 // ---------------------------------------------------------------------------
 // Settlement
@@ -137,12 +137,47 @@ export async function applySettlement(
         orderStatus: existing.status,
       };
     }
-    // A callback for an attempt we never recorded. Nothing to do, but worth
-    // knowing about — it usually means two environments share a shortcode.
-    logger.warn(
+    /**
+     * A settlement for an attempt this service never recorded.
+     *
+     * There is nothing to apply, but it is not a quiet condition. The two
+     * explanations are that two environments share a shortcode — so real money
+     * is settling against the wrong database, and somebody paid for tickets
+     * they will never be issued — or that someone is probing the callback
+     * endpoint with invented references. Neither should be discovered later.
+     *
+     * Recorded in the ledger rather than only logged. A log line is retained
+     * for days and read when somebody already suspects a problem; the ledger is
+     * the thing an operator opens *because* they are looking for what went
+     * wrong, and `/api/admin/ledger` is where it will be seen.
+     */
+    logger.error(
       { gatewayRef: result.gatewayRef, resultCode: result.resultCode },
-      'settlement received for an unknown payment reference',
+      'settlement for an unknown payment reference — shared shortcode, or a probe',
     );
+
+    await recordStandaloneTransition({
+      entity: 'payment',
+      // No payment row exists, so the gateway's own reference is the only
+      // identifier this event has.
+      entityId: result.gatewayRef,
+      event: 'payment.unknown_reference',
+      fromState: null,
+      toState: 'ignored',
+      actor: 'gateway:mpesa',
+      amountCents: result.amountCents ?? null,
+      detail: {
+        gatewayRef: result.gatewayRef,
+        resultCode: result.resultCode,
+        outcome: result.outcome,
+        receipt: result.receipt ?? null,
+      },
+    }).catch((error: unknown) => {
+      // The callback still has to be acknowledged; failing to file the note
+      // must not turn this into a retry storm from Safaricom.
+      logger.error({ err: error }, 'could not record unknown-reference settlement');
+    });
+
     await markWebhook(options.webhookEventId ?? null, 'ignored', 'unknown gateway ref');
     return { applied: false, reason: 'unknown_payment' };
   }
