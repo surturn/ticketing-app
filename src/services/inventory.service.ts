@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import type { Tx } from '../db/client.js';
 import { withTransaction } from '../db/client.js';
 import { orderItems, orders, ticketTiers } from '../db/schema.js';
@@ -50,6 +50,51 @@ export function hasRoomFor(
 // SELECT-then-UPDATE would hold the row lock across two round trips instead of
 // one. The CHECK constraint in the schema backstops all of it.
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// "Is this order holding seats?" — asked in one place, answered one way.
+//
+// The rule was written twice with two different definitions. `releaseOrder`
+// keyed on `released_at`; the checkout hold-cap keyed on `reserved_until >
+// now()`. Only the first is right, and the difference is not academic:
+// `quantity_reserved` is decremented *here*, in `releaseOrder`, and nowhere
+// else. An order whose hold has lapsed but which the expiry worker has not
+// swept yet is still occupying seats in the counters — the clock running out
+// does not give anything back, the sweep does.
+//
+// So the cap keyed on `reserved_until` under-counted, and somebody sitting on
+// three lapsed-but-unswept holds could open a fourth while all three sets of
+// seats were still locked. The window is normally short, and is exactly as long
+// as the queue is behind — which is longest during the flash sale the cap
+// exists for.
+// ---------------------------------------------------------------------------
+
+/** The order statuses in which seats may still be held. */
+export const HOLDING_STATUSES = ['pending', 'awaiting_payment'] as const;
+
+/**
+ * Whether this order is still occupying inventory.
+ *
+ * `releasedAt` is the authority, not the clock: seats come back when
+ * `releaseOrder` returns them, which is the only place the counter moves.
+ */
+export function isHoldingInventory(order: {
+  status: OrderStatus;
+  releasedAt: Date | null;
+}): boolean {
+  return (
+    order.releasedAt === null &&
+    (HOLDING_STATUSES as readonly string[]).includes(order.status)
+  );
+}
+
+/** The same rule as a SQL predicate, for queries over `orders`. */
+export function holdingInventoryFilter(): SQL {
+  return and(
+    inArray(orders.status, [...HOLDING_STATUSES]),
+    isNull(orders.releasedAt),
+  )!;
+}
 
 /** Deterministic lock ordering — two orders touching the same pair of tiers in
  *  opposite orders would otherwise deadlock. Sorting by id makes that
@@ -208,12 +253,10 @@ export async function releaseOrder(
 
     if (!order) throw notFound(`Order ${orderId} not found`);
 
-    // Already settled or already released — nothing to give back.
-    if (order.releasedAt || order.status === 'paid' || order.status === 'refunded') {
-      return { released: false, status: order.status };
-    }
-
-    if (order.status !== 'pending' && order.status !== 'awaiting_payment') {
+    // Settled, already released, or never holding anything — nothing to give
+    // back. One question, asked through the shared predicate so this and the
+    // checkout hold-cap cannot drift apart again.
+    if (!isHoldingInventory(order)) {
       return { released: false, status: order.status };
     }
 

@@ -96,6 +96,8 @@ describe.skipIf(!enabled)('active hold capacity', () => {
     status: 'pending' | 'awaiting_payment' | 'paid' | 'expired';
     minutesLeft: number;
     phone?: string;
+    /** Seats already handed back by `releaseOrder`. */
+    released?: boolean;
   }) {
     const [order] = await db
       .insert(orders)
@@ -109,6 +111,7 @@ describe.skipIf(!enabled)('active hold capacity', () => {
         totalCents: 100_000,
         status: options.status,
         reservedUntil: new Date(Date.now() + options.minutesLeft * 60_000),
+        releasedAt: options.released ? new Date() : null,
       })
       .returning();
 
@@ -142,11 +145,21 @@ describe.skipIf(!enabled)('active hold capacity', () => {
     await expect(attempt()).rejects.toMatchObject({ code: 'too_many_active_holds' });
   });
 
-  it('does not count holds that have already lapsed', async () => {
-    // Still `awaiting_payment` because the expiry worker has not swept them, but
-    // holding nothing — the seats went back when the hold ran out.
+  it('still counts a lapsed hold the sweeper has not reached', async () => {
+    // The clock running out does not give seats back — `releaseOrder` does, and
+    // it is the only thing that moves `quantity_reserved`. Until it runs, these
+    // three are still occupying inventory and must still count.
     for (let i = 0; i < HOLD_LIMIT; i += 1) {
       await seedHold({ status: 'awaiting_payment', minutesLeft: -5 });
+    }
+
+    await expect(attempt()).rejects.toMatchObject({ code: 'too_many_active_holds' });
+  });
+
+  it('stops counting once the seats have actually been returned', async () => {
+    // Released, so the counters have the seats back and the buyer is free again.
+    for (let i = 0; i < HOLD_LIMIT; i += 1) {
+      await seedHold({ status: 'expired', minutesLeft: -5, released: true });
     }
 
     await expect(attempt()).resolves.toMatchObject({ status: 'awaiting_payment' });
