@@ -19,6 +19,7 @@ import { ThemeProvider } from './lib/theme';
 import { lazyRoute } from './lib/lazyRoute';
 import { EventsPage } from './pages/EventsPage';
 import { RouteError } from './pages/RouteError';
+import { ToastProvider } from './components/Toasts';
 
 /**
  * The providers and the frame, as the route every screen renders inside.
@@ -31,9 +32,14 @@ function Root() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <AppShell>
-          <Outlet />
-        </AppShell>
+        {/* Inside the shell rather than outside it, so a notice about a failed
+            request survives navigation between routes — the request that failed
+            and the page the buyer lands on next are frequently not the same. */}
+        <ToastProvider>
+          <AppShell>
+            <Outlet />
+          </AppShell>
+        </ToastProvider>
       </AuthProvider>
     </ThemeProvider>
   );
