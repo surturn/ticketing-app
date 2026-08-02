@@ -2,6 +2,7 @@ import { LIMITS } from '../config/rate-limits.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { TERMS_VERSION, acceptanceIsCurrent } from '../lib/consent.js';
+import { enqueueNotification } from '../queue/queues.js';
 import { boundedText, emailAddress, mpesaPhone } from '../lib/validation.js';
 import { requireUser } from '../plugins/auth.js';
 import {
@@ -13,7 +14,6 @@ import {
   deleteAccount,
   getOrdersForUser,
   recordSignIn,
-  sendWelcomeEmail,
   setAnnouncementsOptIn,
   updateProfile,
 } from '../services/users.service.js';
@@ -46,15 +46,28 @@ export async function accountRoutes(app: FastifyInstance): Promise<void> {
     async (request) => {
       const result = await recordSignIn(request.user!);
 
-      // Once, on the sign-in that created the account. Not awaited and never
-      // allowed to throw: a welcome that failed to send must not turn a
-      // successful sign-in into an error the buyer sees.
+      /**
+       * Once, on the sign-in that created the account — and queued, not sent.
+       *
+       * This used to be `void sendWelcomeEmail(...).catch(log)`, which meant a
+       * provider that was briefly unreachable lost the welcome permanently:
+       * nothing retried it and nothing recorded that a buyer never got one.
+       * That is exactly what happened while Brevo was rejecting our IP. Every
+       * other email here goes through the queue and retries; this was the one
+       * exception, and the exception is the one that broke.
+       *
+       * Still never allowed to fail the sign-in: enqueueing is cheap, but a
+       * Redis hiccup must not turn a successful sign-in into an error.
+       */
       if (result.created) {
-        void sendWelcomeEmail(result.user.email, result.user.displayName).catch(
-          (error: unknown) => {
-            request.log.warn({ err: error }, 'could not send welcome email');
-          },
-        );
+        void enqueueNotification({
+          kind: 'account-welcome',
+          userId: result.user.id,
+          email: result.user.email,
+          displayName: result.user.displayName,
+        }).catch((error: unknown) => {
+          request.log.warn({ err: error }, 'could not queue the welcome email');
+        });
       }
 
       return {

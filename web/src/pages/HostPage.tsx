@@ -12,6 +12,7 @@
  */
 import { OrganiserPitch } from '@/components/OrganiserPitch';
 import { ButtonAnchor } from '@/components/ui';
+import { WhatsAppButton, WHATSAPP_DISPLAY } from '@/components/WhatsAppButton';
 
 export function HostPage() {
   return (
@@ -29,13 +30,29 @@ export function HostPage() {
           with or without signal.
         </p>
 
-        <div className="mt-7">
+        <div className="mt-7 flex flex-wrap items-center gap-3">
           {/* One filled button in this view, and it is gold: the organiser's
               primary action on the organiser's page. */}
           <ButtonAnchor href="#pricing" variant="gold">
             See what it costs
           </ButtonAnchor>
+
+          {/* Outlined, beside it rather than competing with it — but present in
+              the hero rather than at the bottom of the page. An organiser
+              deciding whether to trust us with a sale wants a person, and the
+              answer to "how fast do they reply" is the pitch. */}
+          <WhatsAppButton
+            variant="outlined"
+            prefill="Hi Eventify — I would like to list an event."
+          >
+            Talk to us on WhatsApp
+          </WhatsAppButton>
         </div>
+
+        <p className="md-body-small mt-3 text-on-surface-variant">
+          Fastest way to reach us — {WHATSAPP_DISPLAY}. We answer during working
+          hours, usually within the hour.
+        </p>
       </section>
 
       <OrganiserPitch />
