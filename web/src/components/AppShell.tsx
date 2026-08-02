@@ -78,9 +78,18 @@ function navClass({ isActive }: { isActive: boolean }): string {
 
 // ─── Footer ────────────────────────────────────────────────────────────────
 
-function FooterColumn({ title, children }: { title: string; children: ReactNode }) {
+function FooterColumn({
+  title,
+  className,
+  children,
+}: {
+  title: string;
+  /** For the blocks that need to span both columns on a phone. */
+  className?: string;
+  children: ReactNode;
+}) {
   return (
-    <div>
+    <div className={className}>
       {/* Muted gold rather than grey. It warms the footer without any of these
           headings reading as something to press — full-strength tertiary is the
           organiser signal, and a column label is not asking for anything. */}
@@ -266,8 +275,19 @@ export function AppShell({ children }: { children: ReactNode }) {
           four short columns of things that exist beats forty that do not. */}
       <footer className="mt-16 border-t border-outline-variant/60 bg-surface-container-low">
         <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
-          <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
-            <div>
+          {/* Two columns on a phone rather than four stacked blocks.
+              Single-column made the footer about as tall as some of the pages
+              above it, which on a phone is a long scroll past nothing to reach
+              the legal links people actually come down here for.
+
+              Not everything halves, though. The two link lists pair naturally —
+              short labels, similar length — while the brand paragraph and the
+              door notes are prose, and prose in a ~150px column on a small
+              handset wraps to one or two words a line and reads worse than it
+              did stacked. So those two span the full width and only the links
+              sit side by side. */}
+          <div className="grid grid-cols-2 gap-x-6 gap-y-9 sm:gap-10 lg:grid-cols-4">
+            <div className="col-span-2 lg:col-span-1">
               <Wordmark />
               <p className="md-body-medium mt-4 max-w-xs text-on-surface-variant">
                 Ticketing for Kenyan events. M-Pesa in, tickets out, money in
@@ -296,7 +316,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               </FooterAnchor>
             </FooterColumn>
 
-            <FooterColumn title="At the door">
+            <FooterColumn title="At the door" className="col-span-2 lg:col-span-1">
               <li className="md-body-medium text-on-surface-variant">
                 Tickets arrive by email and scan at the gate.
               </li>
