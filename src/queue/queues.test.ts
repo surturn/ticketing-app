@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { shouldRunDbTests } from '../test/disposable-db.js';
 import {
   cancelOrderExpiry,
   enqueueNotification,
@@ -30,7 +31,7 @@ import {
 // Run with: RUN_DB_TESTS=true npm test
 // ---------------------------------------------------------------------------
 
-const enabled = process.env.RUN_DB_TESTS === 'true';
+const enabled = shouldRunDbTests();
 
 const uuid = () => crypto.randomUUID();
 

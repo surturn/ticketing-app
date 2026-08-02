@@ -3,6 +3,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { closeDatabase, db, withTransaction } from '../db/client.js';
 import { ledgerEntries } from '../db/schema.js';
 import { recordTransition, verifyChain, getOrderHistory } from './ledger.service.js';
+import { shouldRunDbTests } from '../test/disposable-db.js';
 
 // ---------------------------------------------------------------------------
 // These assert the *database's* guarantees, not the application's. The whole
@@ -13,7 +14,7 @@ import { recordTransition, verifyChain, getOrderHistory } from './ledger.service
 // Run with: RUN_DB_TESTS=true npm test
 // ---------------------------------------------------------------------------
 
-const enabled = process.env.RUN_DB_TESTS === 'true';
+const enabled = shouldRunDbTests();
 
 const randomUuid = () => crypto.randomUUID();
 

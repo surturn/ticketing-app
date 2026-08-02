@@ -11,6 +11,7 @@ import {
   webhookEvents,
 } from '../db/schema.js';
 import type { SettlementResult } from '../gateways/types.js';
+import { shouldRunDbTests } from '../test/disposable-db.js';
 
 // ---------------------------------------------------------------------------
 // A settlement that arrives by callback is a claim, not a fact.
@@ -28,38 +29,10 @@ import type { SettlementResult } from '../gateways/types.js';
 // Point DATABASE_URL at a throwaway database: this truncates tables.
 // ---------------------------------------------------------------------------
 
-/**
- * Refuses to run against a database that is not obviously disposable.
- *
- * `beforeEach` truncates six tables. `.env` in this repo points DATABASE_URL at
- * the local *development* database, not `ticketing_test`, so `RUN_DB_TESTS=true`
- * on a default checkout deletes the developer's own seed data — which is exactly
- * what happened when this file was first run. The convention was documented in a
- * comment in a sibling suite; a comment is not a guard.
- *
- * Override deliberately with TEST_DATABASE_URL, or name the database so it is
- * plainly a test one.
- */
-function targetIsDisposable(): boolean {
-  const url = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? '';
-  if (!url) return false;
-  try {
-    const name = new URL(url).pathname.slice(1);
-    return /(^|[_-])test($|[_-])/.test(name);
-  } catch {
-    return false;
-  }
-}
-
-const enabled = process.env.RUN_DB_TESTS === 'true';
-
-if (enabled && !targetIsDisposable()) {
-  throw new Error(
-    'RUN_DB_TESTS=true but DATABASE_URL does not name a test database.\n' +
-      '  These tests truncate tables. Point DATABASE_URL (or TEST_DATABASE_URL) at\n' +
-      '  a throwaway database whose name contains "test", e.g. ticketing_test.',
-  );
-}
+// Truncates six tables, so it runs only against a database named as disposable.
+// The guard is shared with the other destructive suites — see `disposable-db`
+// for why it is code rather than a comment.
+const enabled = shouldRunDbTests();
 
 /** What the gateway will claim when `queryStatus` is called. Set per test. */
 let queryOutcome: SettlementResult['outcome'] = 'succeeded';
