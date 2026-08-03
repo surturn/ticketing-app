@@ -378,7 +378,7 @@ export function EventPage() {
             </div>
             <p className="mt-3">
               {event.organiser.verified
-                ? 'We have verified this organiser’s identity and payout details before letting them sell.'
+                ? 'Eventify has vetted this organiser before allowing them to sell tickets.'
                 : 'Tickets for this event are sold through Eventify, and your payment is protected the same way on every event.'}
             </p>
           </Accordion>
@@ -643,7 +643,12 @@ export function EventPage() {
 
       {related.length >= 3 && (
         <Section title="You might also like">
-          <EventRail title="You might also like" events={related} headed={false} />
+          <EventRail
+            title="You might also like"
+            events={related}
+            headed={false}
+            morphPoster={false}
+          />
         </Section>
       )}
 

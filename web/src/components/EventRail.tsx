@@ -23,7 +23,13 @@ function railDate(iso: string, timezone: string): string {
   }).format(new Date(iso));
 }
 
-function RailCard({ event }: { event: EventSummary }) {
+function RailCard({
+  event,
+  morphPoster,
+}: {
+  event: EventSummary;
+  morphPoster: boolean;
+}) {
   const to = `/events/${event.slug}`;
   const transitioning = useViewTransitionState(to);
   const soldOut = event.fromPriceCents === null;
@@ -43,7 +49,7 @@ function RailCard({ event }: { event: EventSummary }) {
         className="group block rounded-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
       >
         <div
-          style={transitioning ? { viewTransitionName: 'poster' } : undefined}
+          style={morphPoster && transitioning ? { viewTransitionName: 'poster' } : undefined}
           className={`md-elevation-1 relative aspect-4/5 overflow-hidden rounded-md transition-shadow duration-(--dur-medium) ${
             soldOut ? 'opacity-60' : ''
           }`}
@@ -89,11 +95,26 @@ export function EventRail({
   title,
   events,
   headed = true,
+  morphPoster = true,
 }: {
   title: string;
   events: EventSummary[];
   /** False when the rail sits inside a `Section` that already titles it. */
   headed?: boolean;
+  /**
+   * Whether a card may claim the shared poster name on its way out.
+   *
+   * False on the event page, where the hero's floating poster already holds
+   * `poster` for the whole time the page is mounted. Two elements claiming
+   * one name is not a smaller transition — the browser finds duplicates and
+   * drops the transition altogether, root cross-fade included.
+   *
+   * Declining here is what *restores* the morph rather than losing it: with
+   * the rail silent, the outgoing event's hero poster and the incoming
+   * event's hero poster are the only claimants, one per page, so the artwork
+   * morphs from one event page into the next.
+   */
+  morphPoster?: boolean;
 }) {
   if (events.length === 0) return null;
 
@@ -123,7 +144,7 @@ export function EventRail({
           reader there is more to the right, without a scrollbar or an arrow. */}
       <ul className="-mx-4 flex snap-x snap-mandatory gap-4 overflow-x-auto px-4 pb-2 [-ms-overflow-style:none] [scrollbar-width:none] sm:-mx-6 sm:px-6 [&::-webkit-scrollbar]:hidden">
         {events.map((event) => (
-          <RailCard key={event.id} event={event} />
+          <RailCard key={event.id} event={event} morphPoster={morphPoster} />
         ))}
       </ul>
     </section>
