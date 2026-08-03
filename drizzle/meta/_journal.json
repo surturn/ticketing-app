@@ -71,6 +71,13 @@
       "when": 1785691669185,
       "tag": "0009_tenancy",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1785773420223,
+      "tag": "0010_slimy_gamora",
+      "breakpoints": true
     }
   ]
 }

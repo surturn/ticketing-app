@@ -281,6 +281,38 @@ export const events = pgTable(
      * setting up an event at midnight should not be blocked on a designer.
      */
     posterUrl: text('poster_url'),
+
+    /**
+     * The cinematic banner, 16:9.
+     *
+     * The poster is the promoter's branding; this is the *experience* — a
+     * photograph of the room the buyer is deciding whether to be in. The brand
+     * requires the hero to outweigh the poster on every surface that shows
+     * both, which is why it is a separate column rather than a second use of
+     * `poster_url`: they are cropped differently, they are sourced differently,
+     * and one is not a substitute for the other.
+     *
+     * Nullable, and deliberately so. An organiser listing at midnight has a
+     * poster from their designer and no photograph of an event that has not
+     * happened yet, so every surface falls back through poster to a default
+     * rather than blocking the listing.
+     */
+    heroUrl: text('hero_url'),
+
+    /**
+     * What kind of event this is.
+     *
+     * Text with an allowlist enforced at the route, rather than a `pgEnum`.
+     * The status enum is genuinely closed — an event is draft, published,
+     * closed or cancelled and there is no fifth thing. A taxonomy of event
+     * kinds is the opposite: it will grow the first time someone lists a film
+     * screening, and `ALTER TYPE` inside a transaction is a migration nobody
+     * wants to run against a live table for something this soft.
+     *
+     * Nullable. Events created before this column existed have no category and
+     * must keep listing normally.
+     */
+    category: text('category'),
     timezone: text('timezone').notNull().default('Africa/Nairobi'),
     currency: text('currency').notNull().default('KES'),
     startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
