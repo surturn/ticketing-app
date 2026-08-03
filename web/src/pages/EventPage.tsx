@@ -11,12 +11,17 @@ import {
   ApiError,
   createCheckout,
   fetchEvent,
+  fetchEvents,
   fieldErrors,
   previewCheckout,
   type PreviewResponse,
 } from '@/lib/api';
+import { Accordion } from '@/components/Accordion';
 import { EventHero } from '@/components/EventHero';
+import { EventRail } from '@/components/EventRail';
+import { HowItWorks } from '@/components/HowItWorks';
 import { LocalErrorBoundary } from '@/components/LocalErrorBoundary';
+import { Section } from '@/components/Section';
 import { TicketCard } from '@/components/TicketCard';
 import { useToast } from '@/components/Toasts';
 import { formatMoney } from '@/lib/format';
@@ -57,6 +62,23 @@ export function EventPage() {
 
   const { data, loading, error, reload } = useAsync(() => fetchEvent(slug), [slug]);
   const event = data?.event;
+
+  // The full listing is already cached by the homepage in most sessions, and a
+  // failure here must not touch the page the buyer came for — so it fails to an
+  // empty list and the section simply does not render.
+  const { data: listing } = useAsync(fetchEvents);
+
+  const related = useMemo(() => {
+    const all = listing?.events ?? [];
+    if (!event) return [];
+    const sameCategory = all.filter(
+      (e) => e.slug !== event.slug && e.category && e.category === event.category,
+    );
+    // Falls back to whatever is on next rather than showing nothing: someone at
+    // the bottom of an event page is still browsing.
+    const pool = sameCategory.length >= 3 ? sameCategory : all.filter((e) => e.slug !== event.slug);
+    return pool.slice(0, 10);
+  }, [listing, event]);
 
   const { notify } = useToast();
   const [basket, setBasket] = useState<Record<string, number>>({});
@@ -317,6 +339,94 @@ export function EventPage() {
             />
           ))}
         </div>
+
+        {/* The questions stay visible; only the answers cost space. */}
+        <div className="mt-12">
+          <Accordion
+            label="Venue"
+            summary={event.venue ?? 'To be confirmed'}
+            icon={<IconPin />}
+          >
+            <p>{event.venue ?? 'The organiser has not published a venue yet.'}</p>
+            {event.venue && (
+              <a
+                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.venue)}`}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="md-label-large mt-3 inline-flex text-primary underline"
+              >
+                Open in Maps
+              </a>
+            )}
+          </Accordion>
+
+          <Accordion
+            label="Hosted by"
+            summary={event.organiser.name}
+            icon={<IconPeople />}
+          >
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="md-title-medium text-on-surface">
+                {event.organiser.name}
+              </span>
+              {/* Only when true. There is no "unverified" badge — labelling an
+                  organiser unverified on the page selling their tickets is a
+                  claim we would be publishing on their behalf, and the platform
+                  is onboarding vetted organisers only, so the absence of a badge
+                  is a queue rather than a judgement. */}
+              {event.organiser.verified && <VerifiedBadge />}
+            </div>
+            <p className="mt-3">
+              {event.organiser.verified
+                ? 'We have verified this organiser’s identity and payout details before letting them sell.'
+                : 'Tickets for this event are sold through Eventify, and your payment is protected the same way on every event.'}
+            </p>
+          </Accordion>
+
+          <Accordion label="Refund policy" summary="This event is non-refundable.">
+            <p>
+              Tickets for this event are non-refundable. If the event is cancelled
+              or rescheduled by the organiser, we will contact you at the email
+              address on your order.
+            </p>
+          </Accordion>
+
+          <Accordion label="FAQ" summary="View common questions">
+            <dl className="space-y-4">
+              <div>
+                <dt className="md-title-small text-on-surface">
+                  How do I get my ticket?
+                </dt>
+                <dd className="mt-1">
+                  It arrives by email the moment your payment clears. Open it once
+                  and it works at the gate with no signal.
+                </dd>
+              </div>
+              <div>
+                <dt className="md-title-small text-on-surface">
+                  Do I need an account?
+                </dt>
+                <dd className="mt-1">
+                  No. Buy as a guest and we email your tickets. Signing in later
+                  with the same address collects them into one place.
+                </dd>
+              </div>
+              <div>
+                <dt className="md-title-small text-on-surface">
+                  Can I buy for friends?
+                </dt>
+                <dd className="mt-1">
+                  Yes. Choose the quantity you need — all the tickets arrive in one
+                  email for you to forward.
+                </dd>
+              </div>
+            </dl>
+          </Accordion>
+        </div>
+
+        <div className="mt-12">
+          <HowItWorks />
+        </div>
       </div>
 
       {/* ─── Summary and checkout ─────────────────────────────────────── */}
@@ -529,6 +639,13 @@ export function EventPage() {
           </ButtonLink>
         </div>
       </aside>
+    </div>
+
+      {related.length >= 3 && (
+        <Section title="You might also like">
+          <EventRail title="You might also like" events={related} headed={false} />
+        </Section>
+      )}
 
       {/* The sticky subtotal, phones only.
           On desktop the summary panel is already pinned beside the tiers, but
@@ -557,6 +674,56 @@ export function EventPage() {
         </div>
       )}
     </div>
-    </div>
+  );
+}
+
+function IconPin() {
+  return (
+    <svg viewBox="0 0 20 20" className="size-5" fill="none" aria-hidden="true">
+      <path
+        d="M10 18s6-5 6-9a6 6 0 1 0-12 0c0 4 6 9 6 9Z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <circle cx="10" cy="9" r="2" stroke="currentColor" strokeWidth="1.6" />
+    </svg>
+  );
+}
+
+function IconPeople() {
+  return (
+    <svg viewBox="0 0 20 20" className="size-5" fill="none" aria-hidden="true">
+      <circle cx="7.5" cy="7" r="2.5" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M3 16c0-2.2 2-4 4.5-4s4.5 1.8 4.5 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M13.5 12c1.9.3 3.5 1.9 3.5 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <circle cx="14" cy="7.5" r="2" stroke="currentColor" strokeWidth="1.6" />
+    </svg>
+  );
+}
+
+/**
+ * The vetted mark.
+ *
+ * Blue, not gold. Gold means "this leads to the organiser side of the product"
+ * — a door for the seller. This is a statement to the *buyer* about someone
+ * else, which is the trust register, and trust is blue everywhere else in this
+ * product. Making it gold would spend the one signal a buyer has for telling
+ * the two halves apart.
+ */
+function VerifiedBadge() {
+  return (
+    <span className="md-label-medium inline-flex items-center gap-1.5 rounded-xs bg-primary-container px-2 py-1 text-on-primary-container">
+      <svg viewBox="0 0 16 16" className="size-3.5" fill="none" aria-hidden="true">
+        <path
+          d="M8 1.5l1.8 1.2 2.1-.3.6 2 1.7 1.3-1 1.9.3 2.1-2 .6-1.3 1.7L8 12.9l-2.2.1-1.3-1.7-2-.6.3-2.1-1-1.9L3.5 5.4l.6-2 2.1.3L8 1.5Z"
+          stroke="currentColor"
+          strokeWidth="1.3"
+          strokeLinejoin="round"
+        />
+        <path d="m5.8 8 1.5 1.5L10.2 6.6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      Verified organiser
+    </span>
   );
 }
