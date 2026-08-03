@@ -4,8 +4,9 @@
  * A grid where every event carries identical weight makes the buyer do all the
  * work of choosing. The next event on sale gets the top of the page instead.
  *
- * Ink and paper, not glass: a solid panel, a hairline border, paper grain and
- * one rule of colour down the leading edge. The poster is shown crisp and
+ * The poster leads the DOM and sits on its own surface with soft elevation —
+ * per §Cards, cards float, they don't sink, so there is no border and no
+ * gradient wash doing the separating for it. The artwork is shown crisp and
  * whole rather than blurred into a backdrop — it is the promoter's work and the
  * thing being sold, so damaging it to make a texture would be the wrong trade.
  */
@@ -37,24 +38,22 @@ export function FeaturedEvent({ event }: { event: EventSummary }) {
   const showArtwork = Boolean(event.posterUrl) && !artworkFailed;
 
   return (
-    <section className="relative mb-14 overflow-hidden rounded-lg border border-primary/25 bg-surface-container">
+    <section className="relative mb-(--space-section-sm) overflow-hidden rounded-lg bg-surface-container-lowest md-elevation-1 sm:mb-(--space-section)">
+      <div className="relative grid gap-0 sm:grid-cols-[minmax(0,320px)_1fr]">
+        {showArtwork && (
+          <div className="relative aspect-4/5 w-full overflow-hidden sm:aspect-auto">
+            <img
+              src={event.posterUrl!}
+              alt={`Poster for ${event.name}`}
+              onError={() => setArtworkFailed(true)}
+              loading="lazy"
+              decoding="async"
+              className="size-full object-cover object-top"
+            />
+          </div>
+        )}
 
-      {/* A wash of the primary across the panel — dark mode only. On white the
-          same gradient lands within a few percent of the page behind it, so it
-          reads as a printing fault rather than a spotlight; there the container
-          step and the left rule carry the separation on their own. */}
-      <div
-        className="pointer-events-none absolute inset-0 hidden bg-gradient-to-br from-primary/18 via-primary/5 to-transparent dark:block"
-        aria-hidden="true"
-      />
-
-      {/* A rule of ink down the leading edge, the way a printed bill is trimmed.
-          This is the whole decorative budget for the section — the poster and
-          the type do the rest. */}
-      <div className="absolute inset-y-0 left-0 w-[3px] bg-primary" aria-hidden="true" />
-
-      <div className="relative grid items-center gap-8 p-6 sm:p-10 lg:grid-cols-[1fr_auto] lg:gap-12">
-        <div className="min-w-0">
+        <div className="min-w-0 p-6 sm:p-10">
           <p className="md-eyebrow text-primary">Next up</p>
 
           <h2 className="md-display-small mt-3">{event.name}</h2>
@@ -98,21 +97,6 @@ export function FeaturedEvent({ event }: { event: EventSummary }) {
             )}
           </div>
         </div>
-
-        {/* The poster, at the size a poster deserves. Dropped on small screens
-            rather than shrunk to a thumbnail: the same artwork is a tap away on
-            the event page, and a 90px poster sells nothing while costing the
-            full download. */}
-        {showArtwork && (
-          <div className="hidden lg:block">
-            <img
-              src={event.posterUrl!}
-              alt={`Poster for ${event.name}`}
-              onError={() => setArtworkFailed(true)}
-              className="aspect-4/5 w-56 border border-primary/30 object-cover shadow-2xl shadow-primary/10"
-            />
-          </div>
-        )}
       </div>
     </section>
   );

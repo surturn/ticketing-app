@@ -24,6 +24,7 @@ import { EventPoster } from '@/components/EventPoster';
 import { FeaturedEvent } from '@/components/FeaturedEvent';
 import { EventRail } from '@/components/EventRail';
 import { HomeHero } from '@/components/HomeHero';
+import { OrganiserBand } from '@/components/OrganiserBand';
 import { Section } from '@/components/Section';
 import { TrustBar, BUYER_TRUST } from '@/components/TrustBar';
 import { CATEGORY_LABELS, CATEGORY_ORDER } from '@/lib/eventImages';
@@ -240,6 +241,8 @@ export function EventsPage() {
           )}
         </>
       )}
+
+      <OrganiserBand />
     </div>
   );
 }
