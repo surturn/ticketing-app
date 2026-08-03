@@ -388,14 +388,32 @@ export function EventPage() {
       <div className="grid gap-10 pt-16 lg:grid-cols-[1fr_380px] lg:items-start">
       <div>
         {/* The description, re-homed above the tiers now that the header it
-            used to live inside is gone. */}
-        {event.description && (
+            used to live inside is gone — and, on phones, the poster's home
+            too. EventHero's floating poster is desktop-only (there's no room
+            for it beside the title at phone width), so without this a mobile
+            buyer would never see the artwork at all. Guarded on either
+            condition, not just the description, so the heading never appears
+            over nothing. */}
+        {(event.description || posterVisible) && (
           <div className="mb-10">
             <h2 className="md-title-large mb-3">About this event</h2>
-            <RichText
-              text={event.description}
-              className="md-body-large max-w-2xl text-on-surface-variant"
-            />
+
+            {posterVisible && (
+              <img
+                src={event.posterUrl!}
+                alt={`Poster for ${event.name}`}
+                onError={() => setPosterFailed(true)}
+                loading="lazy"
+                className="mb-5 aspect-4/5 w-full max-w-56 rounded-md object-cover sm:hidden"
+              />
+            )}
+
+            {event.description && (
+              <RichText
+                text={event.description}
+                className="md-body-large max-w-2xl text-on-surface-variant"
+              />
+            )}
           </div>
         )}
 

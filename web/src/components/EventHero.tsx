@@ -27,12 +27,13 @@ export function EventHero({
   onPosterError: () => void;
 }) {
   const hero = heroFor(event);
-  const fromPrice = event.tiers
-    .filter((t) => t.onSale && !t.soldOut)
-    .reduce<number | null>(
-      (low, t) => (low === null || t.priceCents < low ? t.priceCents : low),
-      null,
-    );
+  // Server-computed, not re-derived here. "Cheapest ticket currently on sale"
+  // sounds like a simple filter over tiers, but a tier can be `onSale: true`
+  // and not `soldOut` while still being closed by the organiser — the API is
+  // the one place that already accounts for every reason a tier isn't
+  // purchasable, and a second, client-side definition of "available" would
+  // drift from it the next time a new reason gets added there.
+  const fromPrice = event.fromPriceCents;
 
   return (
     <div className="relative -mx-4 mb-10 sm:-mx-6">
@@ -66,8 +67,9 @@ export function EventHero({
 
       {/* The floating poster. Desktop only: at phone width it would either
           cover the title or shrink to a thumbnail that sells nothing while
-          costing the full download — and the artwork is shown at full size in
-          the About section below. */}
+          costing the full download. It isn't lost on mobile — EventPage
+          renders the same poster, unclipped and view-transition-free, inside
+          the "About this event" section below the hero. */}
       {posterVisible && (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 hidden sm:block">
           <div className="mx-auto flex max-w-6xl justify-end px-6">
