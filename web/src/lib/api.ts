@@ -225,6 +225,15 @@ export function subscribeToAnnouncements(email: string): Promise<unknown> {
 
 // ─── Events ────────────────────────────────────────────────────────────────
 
+export type EventCategory =
+  | 'music'
+  | 'comedy'
+  | 'business'
+  | 'sports'
+  | 'festival'
+  | 'arts'
+  | 'other';
+
 export interface EventSummary {
   id: string;
   slug: string;
@@ -233,6 +242,18 @@ export interface EventSummary {
   venue: string | null;
   /** The promoter's artwork. Null is normal — every surface must cope. */
   posterUrl: string | null;
+  /**
+   * The 16:9 banner. Null is normal and every surface must cope — see
+   * `heroFor`, which is the only place the fallback is decided.
+   */
+  heroUrl: string | null;
+  category: EventCategory | null;
+  /**
+   * Who is running it. Always present — an event cannot exist without an owner.
+   * `verified` means the platform has vetted them; there is no counter-badge
+   * for false, because absence is the signal.
+   */
+  organiser: { name: string; slug: string; verified: boolean };
   timezone: string;
   currency: string;
   startsAt: string;
