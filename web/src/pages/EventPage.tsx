@@ -182,6 +182,11 @@ export function EventPage() {
   const [touched, setTouched] = useState<Record<string, boolean>>({});
 
   const [posterFailed, setPosterFailed] = useState(false);
+  // Collapsed by default — the header's job is to get someone to the tiers
+  // below it, and a long pitch in the way of that is a scroll before a
+  // decision. Only offered as a toggle when there is enough text for
+  // collapsing to matter; a two-line description just renders as written.
+  const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const [preview, setPreview] = useState<PreviewResponse | null>(null);
   const [working, setWorking] = useState<'preview' | 'paying' | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
@@ -438,10 +443,29 @@ export function EventPage() {
               )}
 
               {event.description && (
-                <RichText
-                  text={event.description}
-                  className="md-body-large mt-5 max-w-2xl text-on-surface-variant"
-                />
+                <div className="mt-5 max-w-2xl">
+                  <RichText
+                    text={event.description}
+                    className={`md-body-large text-on-surface-variant ${
+                      descriptionExpanded ? '' : 'line-clamp-4'
+                    }`}
+                  />
+
+                  {/* A rough length rather than a measured overflow — this only
+                      has to be right for the common case, and a toggle that
+                      appears under a description short enough to already fit
+                      costs nothing but a wasted tap. */}
+                  {event.description.length > 220 && (
+                    <button
+                      type="button"
+                      onClick={() => setDescriptionExpanded((expanded) => !expanded)}
+                      aria-expanded={descriptionExpanded}
+                      className="md-label-large mt-2 cursor-pointer text-primary hover:underline"
+                    >
+                      {descriptionExpanded ? 'Show less' : 'Read more'}
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           </div>

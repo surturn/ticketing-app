@@ -108,8 +108,13 @@ echo "backup: verified ${KEY} (${SIZE} bytes)"
 # rather than guessed at — this is the one part of the job that removes data,
 # so it errs towards keeping things.
 
-CUTOFF="$(date -u -d "-${RETAIN_DAYS} days" +%Y-%m-%d 2>/dev/null \
-  || date -u -v-"${RETAIN_DAYS}"d +%Y-%m-%d)"
+# Neither GNU's `-d "-N days"` nor BSD's `-v-Nd` is available here — this runs
+# on `postgres:18-alpine`, whose `date` is BusyBox, and BusyBox's `-d` only
+# accepts a small set of fixed formats (no relative offsets) while `-v` does
+# not exist at all. `@seconds_since_1970` is the one form all three understand,
+# so the offset is computed in the shell instead of asked of `date`.
+NOW_EPOCH="$(date -u +%s)"
+CUTOFF="$(date -u -d "@$((NOW_EPOCH - RETAIN_DAYS * 86400))" +%Y-%m-%d)"
 
 echo "backup: pruning anything before ${CUTOFF}"
 
