@@ -1,6 +1,6 @@
 import { Readable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
-import { MAX_UPLOAD_BYTES, readLimited, sniffImageType } from './storage.js';
+import { keyFor, MAX_UPLOAD_BYTES, readLimited, sniffImageType } from './storage.js';
 
 // ---------------------------------------------------------------------------
 // The type check is the security boundary of the upload endpoint, so the cases
@@ -79,5 +79,19 @@ describe('readLimited', () => {
 
   it('caps at 2MB by default', () => {
     expect(MAX_UPLOAD_BYTES).toBe(2 * 1024 * 1024);
+  });
+});
+
+describe('keyFor', () => {
+  it('files an upload under its own prefix', () => {
+    expect(keyFor('posters', 'image/png')).toMatch(/^posters\/[0-9a-f-]{36}\.png$/);
+    expect(keyFor('heroes', 'image/webp')).toMatch(/^heroes\/[0-9a-f-]{36}\.webp$/);
+  });
+
+  it('mints a fresh key every time', () => {
+    // The key is never derived from the uploaded filename: a user-supplied name
+    // would need escaping, could collide with an existing object and silently
+    // replace it, and would leak whatever the organiser called the file.
+    expect(keyFor('heroes', 'image/jpeg')).not.toBe(keyFor('heroes', 'image/jpeg'));
   });
 });

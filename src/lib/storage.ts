@@ -135,19 +135,35 @@ export interface StoredImage {
   contentType: AllowedMime;
 }
 
+/** Where an upload is filed. Posters and heroes are cropped and served
+    differently, so they are kept apart in the bucket rather than intermingled. */
+export type ImagePrefix = 'posters' | 'heroes';
+
 /**
- * Stores a poster and returns the URL to put in `events.poster_url`.
+ * The object key for a new upload.
  *
- * The key is a fresh UUID rather than anything derived from the uploaded
- * filename. A user-supplied name would need escaping, could collide with an
- * existing object and silently replace it, and would leak whatever the
- * organiser happened to call the file on their laptop.
+ * A fresh UUID rather than anything derived from the uploaded filename. A
+ * user-supplied name would need escaping, could collide with an existing object
+ * and silently replace it, and would leak whatever the organiser happened to
+ * call the file on their laptop.
  */
-export async function storePoster(
+export function keyFor(prefix: ImagePrefix, contentType: AllowedMime): string {
+  return `${prefix}/${randomUUID()}.${ALLOWED[contentType]}`;
+}
+
+/**
+ * Stores an image and returns the URL to put in the event row.
+ *
+ * Generalised from posters when heroes arrived: the two differ only in which
+ * folder they land in, and duplicating the signing, the error handling and the
+ * cache header would have meant two places to fix the next time R2 changed.
+ */
+export async function storeImage(
   body: Buffer,
   contentType: AllowedMime,
+  prefix: ImagePrefix,
 ): Promise<StoredImage> {
-  const key = `posters/${randomUUID()}.${ALLOWED[contentType]}`;
+  const key = keyFor(prefix, contentType);
   const endpoint = `https://${env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${env.R2_BUCKET}/${key}`;
 
   const response = await r2().fetch(endpoint, {
@@ -156,7 +172,7 @@ export async function storePoster(
     headers: {
       'Content-Type': contentType,
       'Content-Length': String(body.length),
-      // Immutable: the key is unique per upload, so a poster at a given URL can
+      // Immutable: the key is unique per upload, so an image at a given URL can
       // never change and a year is safe. Replacing artwork mints a new key.
       'Cache-Control': 'public, max-age=31536000, immutable',
     },
@@ -177,4 +193,12 @@ export async function storePoster(
     bytes: body.length,
     contentType,
   };
+}
+
+/** The original name, kept so existing callers do not have to change. */
+export function storePoster(
+  body: Buffer,
+  contentType: AllowedMime,
+): Promise<StoredImage> {
+  return storeImage(body, contentType, 'posters');
 }
