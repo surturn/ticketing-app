@@ -7,6 +7,7 @@
  */
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
   ApiError,
   createCheckout,
@@ -28,7 +29,6 @@ import {
   ButtonAnchor,
   ButtonLink,
   Card,
-  ConsentCheckbox,
   ErrorState,
   Field,
   Skeleton,
@@ -188,11 +188,14 @@ export function EventPage() {
   /** Per-field objections from the server, keyed by field name. */
   const [serverErrors, setServerErrors] = useState<Record<string, string>>({});
 
-  // Both start false and stay false until tapped. Consent has to be an act the
-  // buyer took, so neither box is ever pre-ticked.
-  const [acceptedTerms, setAcceptedTerms] = useState(false);
-  const [marketingOptIn, setMarketingOptIn] = useState(false);
-  const [termsError, setTermsError] = useState<string | null>(null);
+  // The "Confirm details" modal, and its own copies of email/phone — editable
+  // right up to the moment of paying, independent of the fields above until
+  // confirmed. Terms acceptance is no longer a checkbox: completing this
+  // step, with the notice below the Confirm button, is the act of accepting.
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [modalEmail, setModalEmail] = useState('');
+  const [modalPhone, setModalPhone] = useState('');
+  const [modalTouched, setModalTouched] = useState<Record<string, boolean>>({});
 
   const posterVisible = Boolean(event?.posterUrl) && !posterFailed;
 
@@ -301,14 +304,23 @@ export function EventPage() {
     }
   }
 
-  async function handlePay() {
-    if (!acceptedTerms) {
-      setTermsError('Please accept the terms and privacy notice to continue.');
-      return;
-    }
+  /** Opens the confirm modal and (re)prices the basket while it is open. */
+  function handleCheckoutClick() {
+    setModalEmail(email);
+    setModalPhone(phone);
+    setModalTouched({});
+    setConfirmOpen(true);
+    void handleReview();
+  }
+
+  async function handleConfirm() {
+    const confirmedBuyer = {
+      name: name.trim(),
+      email: modalEmail.trim(),
+      phone: normalisePhoneForDisplay(modalPhone),
+    };
 
     setFailure(null);
-    setTermsError(null);
     setServerErrors({});
     setWorking('paying');
     try {
@@ -316,12 +328,20 @@ export function EventPage() {
         {
           eventSlug: slug,
           items,
-          buyer,
+          buyer: confirmedBuyer,
+          // There is no checkbox any more — reaching this call is the act of
+          // accepting, and the modal says so next to the button that triggers
+          // it. Marketing consent is a separate, freely given choice and is
+          // only ever collected at sign-up, never assumed here.
           acceptedTerms: true,
-          marketingOptIn,
+          marketingOptIn: false,
         },
         idempotencyKey,
       );
+      // Keep the page's own fields in step with what was actually charged, in
+      // case anything ever reads them again before the navigation lands.
+      setEmail(modalEmail);
+      setPhone(modalPhone);
       // Straight to the order page, which owns the waiting state. The prompt is
       // already on the buyer's handset by the time this navigates.
       navigate(`/orders/${order.reference}`, { state: { justCreated: true } });
@@ -531,120 +551,14 @@ export function EventPage() {
                 />
               </div>
 
-              {/* The priced, normalised confirmation. This is where a mistyped
-                  phone number surfaces — as the number it will actually be, not
-                  as the buyer typed it. */}
-              {/* Wrapped because it renders server-shaped money and a list of
-                  issues — the two things most likely to arrive in a form this
-                  component did not expect. A throw here would otherwise take the
-                  whole event page down, including the tiers the buyer came for. */}
-              {preview && (
-                <LocalErrorBoundary
-                  label="the price summary"
-                  onRetry={() => setPreview(null)}
-                >
-                <div className="mt-5 rounded-sm border border-outline-variant bg-surface p-4">
-                  <p className="md-body-medium text-on-surface-variant">
-                    Charging{' '}
-                    <span className="md-data-medium text-on-surface">
-                      {formatMoney(preview.totalCents, event.currency)}
-                    </span>{' '}
-                    to
-                  </p>
-                  <p className="md-data-large mt-0.5 text-on-surface">
-                    {preview.buyer.phone}
-                  </p>
-                  <p className="md-body-small mt-2 text-on-surface-variant">
-                    Held for {preview.holdMinutes} minutes once you pay.
-                  </p>
-
-                  {!preview.chargeable && preview.issues.length > 0 && (
-                    <ul className="md-body-medium mt-3 space-y-1 text-error" role="alert">
-                      {preview.issues.map((issue) => (
-                        <li key={issue}>{issue}</li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-                </LocalErrorBoundary>
-              )}
-
-              {failure && (
-                <p role="alert" className="md-body-medium mt-4 text-error">
-                  {failure}
-                </p>
-              )}
-
-              {/* Two boxes, two questions, neither pre-ticked.
-                  Kept separate because they are separate consents: agreeing to
-                  the terms is not agreeing to marketing, and bundling them into
-                  one tick would make both invalid. The order completes
-                  identically whether or not the second is touched — which is
-                  what makes the first freely given rather than the price of a
-                  ticket. */}
-              <div className="mt-6 space-y-3 border-t border-outline-variant pt-5">
-                <ConsentCheckbox
-                  checked={acceptedTerms}
-                  onChange={(next) => {
-                    setAcceptedTerms(next);
-                    if (next) setTermsError(null);
-                  }}
-                  required
-                  error={termsError}
-                >
-                  I agree to the{' '}
-                  <Link to="/terms" className="text-primary underline">
-                    terms of service
-                  </Link>{' '}
-                  and the{' '}
-                  <Link to="/privacy" className="text-primary underline">
-                    privacy notice
-                  </Link>
-                  , and to my details being used to issue and deliver my ticket.
-                </ConsentCheckbox>
-
-                <ConsentCheckbox checked={marketingOptIn} onChange={setMarketingOptIn}>
-                  Email me about upcoming events and flash sales. Optional, and
-                  you can stop at any time.
-                </ConsentCheckbox>
-              </div>
-
               <div className="mt-6">
-                {preview?.chargeable ? (
-                  <Button
-                    full
-                    onClick={handlePay}
-                    busy={working === 'paying'}
-                    busyLabel="Securing your spot…"
-                  >
-                    Pay {formatMoney(preview.totalCents, event.currency)} with M-Pesa
-                  </Button>
-                ) : (
-                  <Button
-                    full
-                    onClick={handleReview}
-                    disabled={!detailsComplete}
-                    busy={working === 'preview'}
-                    busyLabel="Checking…"
-                  >
-                    Review order
-                  </Button>
-                )}
+                <Button full onClick={handleCheckoutClick} disabled={!detailsComplete}>
+                  Checkout
+                </Button>
               </div>
 
-              {/* Said before the prompt arrives, not after.
-                  The STK request on the buyer's phone shows the registered
-                  Safaricom business name, which is Invonics Technologies, not
-                  Eventify. A payment request from a company they have never
-                  heard of is exactly what a scam looks like, and the careful
-                  ones cancel. Naming it here turns a surprise into a
-                  confirmation that the right thing is happening. */}
               <p className="md-body-small mt-3 text-center text-on-surface-variant">
-                The M-Pesa request will show{' '}
-                <span className="md-data-small text-on-surface">
-                  INVONICS TECHNOLOGIES
-                </span>
-                , who operate Eventify. No account needed — we email your tickets.
+                No account needed — we email your tickets.
               </p>
             </>
           )}
@@ -683,6 +597,244 @@ export function EventPage() {
           </div>
         </div>
       )}
+
+      <AnimatePresence>
+        {confirmOpen && (
+          <ConfirmDetailsModal
+            key="confirm-details"
+            currency={event.currency}
+            preview={preview}
+            loading={working === 'preview'}
+            paying={working === 'paying'}
+            failure={failure}
+            email={modalEmail}
+            phone={modalPhone}
+            touched={modalTouched}
+            onEmailChange={setModalEmail}
+            onPhoneChange={setModalPhone}
+            onTouch={(field) => setModalTouched((t) => ({ ...t, [field]: true }))}
+            serverErrors={serverErrors}
+            onRetryPreview={handleReview}
+            onConfirm={handleConfirm}
+            onClose={() => {
+              // Not while a payment is actually in flight — closing here would
+              // strand the buyer wondering whether it went through.
+              if (working === 'paying') return;
+              setConfirmOpen(false);
+              setFailure(null);
+              setServerErrors({});
+            }}
+          />
+        )}
+      </AnimatePresence>
     </div>
+  );
+}
+
+// ─── Confirm details ───────────────────────────────────────────────────────
+
+/**
+ * The last screen before the STK push fires.
+ *
+ * Replaces what used to be an inline price panel and a separate "Pay" button
+ * on the page itself: pulling the final check into a modal means the buyer's
+ * attention is on nothing else while they confirm the two things a payment
+ * actually depends on — where the tickets go and where the prompt goes.
+ *
+ * There is no consent checkbox here. Reaching for the confirm button is the
+ * act of accepting, and the notice above it says so — quietly, the way a
+ * receipt says terms apply, not as one more thing demanding a tap before the
+ * one the buyer came here to make.
+ */
+function ConfirmDetailsModal({
+  currency,
+  preview,
+  loading,
+  paying,
+  failure,
+  email,
+  phone,
+  touched,
+  onEmailChange,
+  onPhoneChange,
+  onTouch,
+  serverErrors,
+  onRetryPreview,
+  onConfirm,
+  onClose,
+}: {
+  currency: string;
+  preview: PreviewResponse | null;
+  loading: boolean;
+  paying: boolean;
+  failure: string | null;
+  email: string;
+  phone: string;
+  touched: Record<string, boolean>;
+  onEmailChange: (value: string) => void;
+  onPhoneChange: (value: string) => void;
+  onTouch: (field: 'email' | 'phone') => void;
+  serverErrors: Record<string, string>;
+  onRetryPreview: () => void;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  const emailError =
+    (touched.email && !EMAIL.test(email.trim())
+      ? 'That address looks incomplete — check for a missing letter.'
+      : null) ??
+    serverErrors.email ??
+    null;
+  const phoneError =
+    (touched.phone && !PHONE.test(normalisePhoneForDisplay(phone))
+      ? 'Use the number your M-Pesa is on, like 0712 345 678.'
+      : null) ??
+    serverErrors.phone ??
+    null;
+
+  const detailsValid = EMAIL.test(email.trim()) && PHONE.test(normalisePhoneForDisplay(phone));
+  const canConfirm = detailsValid && Boolean(preview?.chargeable) && !paying && !loading;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 grid place-items-center bg-scrim/60 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="confirm-details-title"
+      onClick={() => {
+        if (!paying) onClose();
+      }}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.96, y: 8 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96, y: 8 }}
+        transition={{ type: 'spring', stiffness: 260, damping: 24 }}
+        className="w-full max-w-sm rounded-lg bg-surface-container-high p-6 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 id="confirm-details-title" className="md-title-large text-on-surface">
+          Confirm details
+        </h2>
+        <p className="md-body-medium mt-1 text-on-surface-variant">
+          Check everything before we charge your M-Pesa.
+        </p>
+
+        <div className="mt-5 space-y-4">
+          <Field
+            label="Email"
+            type="email"
+            inputMode="email"
+            value={email}
+            onChange={(e) => onEmailChange(e.target.value)}
+            onBlur={() => onTouch('email')}
+            error={emailError}
+            valid={!emailError && EMAIL.test(email.trim())}
+            autoComplete="email"
+          />
+
+          <Field
+            label="M-Pesa number"
+            type="tel"
+            inputMode="tel"
+            value={phone}
+            onChange={(e) => onPhoneChange(e.target.value)}
+            onBlur={() => onTouch('phone')}
+            error={phoneError}
+            valid={!phoneError && PHONE.test(normalisePhoneForDisplay(phone))}
+            autoComplete="tel"
+            hint="The payment prompt goes to this number."
+          />
+        </div>
+
+        {loading && (
+          <p className="md-body-medium mt-4 text-on-surface-variant">Checking prices…</p>
+        )}
+
+        {/* Wrapped because it renders server-shaped money and a list of
+            issues — the two things most likely to arrive in a form this
+            component did not expect. A throw here would otherwise take the
+            whole modal down mid-payment. */}
+        {!loading && preview && (
+          <LocalErrorBoundary label="the price summary" onRetry={onRetryPreview}>
+            <div className="mt-4 rounded-sm border border-outline-variant bg-surface p-4">
+              <p className="md-body-medium text-on-surface-variant">
+                Charging{' '}
+                <span className="md-data-medium text-on-surface">
+                  {formatMoney(preview.totalCents, currency)}
+                </span>
+              </p>
+              <p className="md-body-small mt-2 text-on-surface-variant">
+                Held for {preview.holdMinutes} minutes once you pay.
+              </p>
+
+              {!preview.chargeable && preview.issues.length > 0 && (
+                <ul className="md-body-medium mt-3 space-y-1 text-error" role="alert">
+                  {preview.issues.map((issue) => (
+                    <li key={issue}>{issue}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </LocalErrorBoundary>
+        )}
+
+        {!loading && failure && (
+          <p role="alert" className="md-body-medium mt-4 text-error">
+            {failure}
+          </p>
+        )}
+
+        {/* Said before the prompt arrives, not after.
+            The STK request on the buyer's phone shows the registered Safaricom
+            business name, which is Invonics Technologies, not Eventify. A
+            payment request from a company they have never heard of is exactly
+            what a scam looks like, and the careful ones cancel. Naming it here
+            turns a surprise into a confirmation that the right thing is
+            happening. */}
+        <p className="md-body-small mt-4 text-center text-on-surface-variant">
+          The M-Pesa request will show{' '}
+          <span className="md-data-small text-on-surface">INVONICS TECHNOLOGIES</span>, who
+          operate Eventify.
+        </p>
+
+        {/* Quiet by design — small, muted, unbolded. Not a checkbox: pressing
+            Confirm below is itself the accepting act, and this line exists so
+            that act is informed rather than assumed, without competing for
+            attention with the button it sits above. */}
+        <p className="md-body-small mt-3 text-center text-on-surface-variant opacity-80">
+          By confirming, you agree we can use these details to process your payment and
+          deliver your ticket — see our{' '}
+          <Link to="/terms" className="underline">
+            Terms
+          </Link>{' '}
+          and{' '}
+          <Link to="/privacy" className="underline">
+            Privacy Notice
+          </Link>
+          .
+        </p>
+
+        <div className="mt-4 flex flex-col gap-2">
+          <Button
+            full
+            onClick={onConfirm}
+            disabled={!canConfirm}
+            busy={paying}
+            busyLabel="Securing your spot…"
+          >
+            {preview
+              ? `Confirm & pay ${formatMoney(preview.totalCents, currency)}`
+              : 'Confirm & pay'}
+          </Button>
+          <Button variant="outlined" full onClick={onClose} disabled={paying}>
+            Cancel
+          </Button>
+        </div>
+      </motion.div>
+    </motion.div>
   );
 }
