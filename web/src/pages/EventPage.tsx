@@ -16,9 +16,10 @@ import {
   type PreviewResponse,
   type Tier,
 } from '@/lib/api';
+import { EventHero } from '@/components/EventHero';
 import { LocalErrorBoundary } from '@/components/LocalErrorBoundary';
 import { useToast } from '@/components/Toasts';
-import { availabilityLabel, formatEventDate, formatMoney } from '@/lib/format';
+import { availabilityLabel, formatMoney } from '@/lib/format';
 import { useAsync } from '@/lib/useAsync';
 import { RichText } from '@/components/RichText';
 import { useAuth } from '@/auth/AuthProvider';
@@ -377,55 +378,26 @@ export function EventPage() {
   }
 
   return (
-    <div className="grid gap-10 lg:grid-cols-[1fr_380px] lg:items-start">
+    <div>
+      <EventHero
+        event={event}
+        posterVisible={posterVisible}
+        onPosterError={() => setPosterFailed(true)}
+      />
+
+      <div className="grid gap-10 pt-16 lg:grid-cols-[1fr_380px] lg:items-start">
       <div>
-        {/* The poster, at last, on the page where the buyer is deciding.
-            Showing it only in the listing was backwards: the moment someone is
-            weighing up a ticket is exactly when the promoter's artwork should be
-            doing its work. */}
-        {/* Blue, not gold. Gold on a consumer surface means "this leads to the
-            organiser side"; using it as a generic accent here would spend the
-            one signal the buyer has for telling the two halves of the product
-            apart. */}
-        <header className="relative mb-10 overflow-hidden rounded-lg border border-primary/25 bg-surface-container">
-          <div className="relative flex flex-col gap-7 p-6 sm:flex-row sm:items-center sm:p-8">
-            {posterVisible && (
-              <img
-                src={event.posterUrl!}
-                alt={`Poster for ${event.name}`}
-                onError={() => setPosterFailed(true)}
-                /* The receiving half of the card → page morph. The grid card
-                   claims the same name on its way out, so the browser treats
-                   the two as one object opening rather than two pages
-                   swapping. */
-                style={{ viewTransitionName: 'poster' }}
-                className="aspect-4/5 w-full shrink-0 rounded-md border border-primary/30 object-cover shadow-2xl shadow-black/20 sm:w-44"
-              />
-            )}
-
-            <div className="min-w-0">
-              {/* A date is a fact the door will check, so it stays in the data
-                  face — but as an eyebrow it is chrome, which is why it is not
-                  also uppercased and tracked out like a mono label. */}
-              <p className="md-data-medium text-primary">
-                {formatEventDate(event.startsAt, event.timezone)}
-              </p>
-
-              <h1 className="md-display-small mt-3">{event.name}</h1>
-
-              {event.venue && (
-                <p className="md-body-large mt-3 text-on-surface-variant">{event.venue}</p>
-              )}
-
-              {event.description && (
-                <RichText
-                  text={event.description}
-                  className="md-body-large mt-5 max-w-2xl text-on-surface-variant"
-                />
-              )}
-            </div>
+        {/* The description, re-homed above the tiers now that the header it
+            used to live inside is gone. */}
+        {event.description && (
+          <div className="mb-10">
+            <h2 className="md-title-large mb-3">About this event</h2>
+            <RichText
+              text={event.description}
+              className="md-body-large max-w-2xl text-on-surface-variant"
+            />
           </div>
-        </header>
+        )}
 
         <h2 className="md-eyebrow mb-5 text-on-surface-variant">Tickets</h2>
 
@@ -683,6 +655,7 @@ export function EventPage() {
           </div>
         </div>
       )}
+    </div>
     </div>
   );
 }
