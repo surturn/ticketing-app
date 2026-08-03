@@ -469,12 +469,41 @@ export function EventPage() {
                 })}
               </ul>
 
-              <div className="mt-4 flex items-baseline justify-between border-t border-outline-variant pt-4">
-                <span className="md-body-medium text-on-surface-variant">Total</span>
-                <span className="md-data-large text-on-surface">
-                  {formatMoney(totalCents, event.currency)}
-                </span>
+              {/* Subtotal, fee, total — stated in that order and always, even
+                  though two of the three are currently the same number.
+                  §Checkout asks for transparency and never surprising the
+                  buyer, and the honest version of that here is to say out loud
+                  that there is no booking fee. Competitors charge one; a buyer
+                  who has been stung before is looking for exactly this line. */}
+              <div className="mt-4 space-y-2 border-t border-outline-variant pt-4">
+                <div className="flex items-baseline justify-between">
+                  <span className="md-body-medium text-on-surface-variant">Subtotal</span>
+                  <span className="md-data-medium text-on-surface">
+                    {formatMoney(totalCents, event.currency)}
+                  </span>
+                </div>
+
+                <div className="flex items-baseline justify-between">
+                  <span className="md-body-medium text-on-surface-variant">
+                    Booking fee
+                  </span>
+                  <span className="md-data-medium text-success">None</span>
+                </div>
+
+                <div className="flex items-baseline justify-between border-t border-outline-variant pt-3">
+                  <span className="md-title-medium text-on-surface">Total</span>
+                  <span className="md-data-large text-primary">
+                    {formatMoney(totalCents, event.currency)}
+                  </span>
+                </div>
               </div>
+
+              <p className="md-body-small mt-4 flex items-center gap-2 text-on-surface-variant">
+                <svg viewBox="0 0 20 20" className="size-4 shrink-0" fill="none" aria-hidden="true">
+                  <rect x="5" y="2" width="10" height="16" rx="2" stroke="currentColor" strokeWidth="1.6" />
+                </svg>
+                Pay with M-Pesa
+              </p>
 
               <div className="mt-6 space-y-4">
                 <Field
@@ -672,9 +701,9 @@ export function EventPage() {
           <div className="flex items-center justify-between gap-4 px-4 py-3">
             <div className="min-w-0">
               <p className="md-body-small text-on-surface-variant">
-                {ticketCount} {ticketCount === 1 ? 'ticket' : 'tickets'}
+                {ticketCount} {ticketCount === 1 ? 'ticket' : 'tickets'} · no fee
               </p>
-              <p className="md-data-large text-on-surface">
+              <p className="md-data-large text-primary">
                 {formatMoney(totalCents, event.currency)}
               </p>
             </div>
