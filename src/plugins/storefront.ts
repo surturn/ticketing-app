@@ -1,8 +1,11 @@
 import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import fastifyStatic from '@fastify/static';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { env } from '../config/env.js';
 import { logger } from '../lib/logger.js';
+import { getPublicEvent, type PublicEvent } from '../services/events.service.js';
 
 // ---------------------------------------------------------------------------
 // Serving the storefront from the API.
@@ -56,6 +59,143 @@ export function sendStorefrontIndex(_request: FastifyRequest, reply: FastifyRepl
       .header('cache-control', 'no-cache')
       .sendFile('index.html', { cacheControl: false })
   );
+}
+
+// ---------------------------------------------------------------------------
+// Per-event link previews.
+//
+// WhatsApp, Telegram, Facebook and the rest unfurl a shared link by fetching
+// the raw HTML and reading its `<meta>` tags — they do not run the bundle, so
+// a single-page app that only ever serves one generic entry document shows the
+// same title and description for every event. That is precisely the moment a
+// link is judged before anyone taps it: a poster and a name in the preview is
+// the difference between an event that looks real and a bare blue link in a
+// WhatsApp group.
+//
+// Handled by rewriting the same entry document that already exists rather
+// than server-rendering the page. The bundle behaves exactly as before once
+// it loads — this only changes what a link shows before a browser ever runs
+// it, and the small string surgery below is cheaper than a render pipeline
+// for the one thing that needed to change.
+// ---------------------------------------------------------------------------
+
+let indexHtmlTemplate: string | null = null;
+
+/** Escapes a value for use inside an HTML attribute or text node. */
+function esc(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/**
+ * Flattens a description into one line of plain prose for a preview card.
+ *
+ * Descriptions are written for `RichText` — paragraphs, bullets, `*emphasis*`
+ * — and a card has no layout to render any of that in, so the same light
+ * markup `RichText` parses is stripped here instead of carried through as
+ * literal asterisks and dashes. Cut at a word boundary rather than mid-word,
+ * because a truncated word reads as a bug and a truncated sentence reads as a
+ * preview.
+ */
+function truncateDescription(raw: string, maxLength = 200): string {
+  const flattened = raw
+    .replace(/\*([^*\n]+)\*/g, '$1')
+    .replace(/^[ \t]*[*\-•]\s+/gm, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (flattened.length <= maxLength) return flattened;
+
+  const cut = flattened.slice(0, maxLength);
+  const lastSpace = cut.lastIndexOf(' ');
+  return `${cut.slice(0, lastSpace > 0 ? lastSpace : maxLength)}…`;
+}
+
+/**
+ * Rewrites the entry document's `<title>`, description and preview tags for
+ * one event.
+ *
+ * A pure string transform, deliberately: this runs on every request for an
+ * event page, and the alternative — parsing the document into a DOM, editing
+ * it, and serialising it back — is a real dependency and real work to redo
+ * four lines of markup that are the same shape on every build.
+ */
+export function injectEventPreview(
+  html: string,
+  event: PublicEvent,
+  canonicalUrl: string,
+): string {
+  const title = `${event.name} · Eventify Tickets`;
+  const description = event.description
+    ? truncateDescription(event.description)
+    : `${event.name}${event.venue ? ` at ${event.venue}` : ''} — book with M-Pesa on Eventify Tickets.`;
+
+  const withTitle = html.replace(
+    /<title>[^<]*<\/title>/,
+    `<title>${esc(title)}</title>`,
+  );
+
+  const withDescription = withTitle.replace(
+    /<meta\s+name="description"[\s\S]*?\/>/,
+    `<meta name="description" content="${esc(description)}" />`,
+  );
+
+  const preview =
+    `    <meta property="og:type" content="website" />\n` +
+    `    <meta property="og:site_name" content="Eventify Tickets" />\n` +
+    `    <meta property="og:title" content="${esc(title)}" />\n` +
+    `    <meta property="og:description" content="${esc(description)}" />\n` +
+    `    <meta property="og:url" content="${esc(canonicalUrl)}" />\n` +
+    (event.posterUrl
+      ? `    <meta property="og:image" content="${esc(event.posterUrl)}" />\n` +
+        `    <meta name="twitter:card" content="summary_large_image" />\n`
+      : `    <meta name="twitter:card" content="summary" />\n`) +
+    `    <meta name="twitter:title" content="${esc(title)}" />\n` +
+    `    <meta name="twitter:description" content="${esc(description)}" />\n` +
+    (event.posterUrl ? `    <meta name="twitter:image" content="${esc(event.posterUrl)}" />\n` : '');
+
+  return withDescription.replace('</head>', `${preview}  </head>`);
+}
+
+/** The absolute origin to build `og:url` and `og:image` from. */
+function resolveOrigin(request: FastifyRequest): string {
+  if (env.PUBLIC_ORDER_BASE_URL) return env.PUBLIC_ORDER_BASE_URL.replace(/\/+$/, '');
+  return `${request.protocol}://${request.hostname}`;
+}
+
+/**
+ * Serves the entry document with one event's preview tags rewritten into it.
+ *
+ * Falls through to the plain entry document — not a 404 — for anything that
+ * is not a real, published event. A stale or mistyped link should look like
+ * the app that could not find that event, not like the server tripping over
+ * the request; the client already renders that case.
+ */
+async function sendEventPreview(
+  request: FastifyRequest<{ Params: { slug: string } }>,
+  reply: FastifyReply,
+) {
+  if (indexHtmlTemplate) {
+    try {
+      const event = await getPublicEvent(request.params.slug);
+      const canonicalUrl = `${resolveOrigin(request)}/events/${event.slug}`;
+      const html = injectEventPreview(indexHtmlTemplate, event, canonicalUrl);
+
+      return reply
+        .type('text/html')
+        .header('cache-control', 'no-cache')
+        .send(html);
+    } catch {
+      // Not found, not published, or the database is unreachable — the
+      // buyer still gets the app, which already knows how to say "we could
+      // not find that event".
+    }
+  }
+
+  return sendStorefrontIndex(request, reply);
 }
 
 /**
@@ -112,6 +252,17 @@ export async function registerStorefront(app: FastifyInstance): Promise<boolean>
   });
 
   app.get('/', sendStorefrontIndex);
+
+  // Read once at startup rather than per request — the file does not change
+  // between deploys, and re-reading a few hundred bytes from disk on every
+  // event view is work `injectEventPreview` has no reason to wait on.
+  indexHtmlTemplate = await readFile(path.join(STOREFRONT_ROOT, 'index.html'), 'utf8');
+
+  // Ahead of the not-found fallback that would otherwise answer this path
+  // with the same generic document every other route gets — see the
+  // "Per-event link previews" section above for why this one needs its own
+  // route instead.
+  app.get<{ Params: { slug: string } }>('/events/:slug', sendEventPreview);
 
   /**
    * The icon, for pages that cannot carry it inline.
