@@ -90,8 +90,15 @@ export function EventsPage() {
   // The spotlight is the soonest event, and only while the buyer is browsing
   // unfiltered. Once they search, they have told us what they want and a
   // feature slot for something else is just an obstacle above the results.
+  // A chosen category counts as narrowing too: it also gates the category
+  // rails below, and a buyer who just tapped "Music" should not see a Comedy
+  // rail sitting above a grid that is already narrowed to Music — that reads
+  // as the page ignoring what they asked for.
   const isBrowsing =
-    filters.query.trim() === '' && filters.window === 'any' && filters.sort === 'soonest';
+    filters.query.trim() === '' &&
+    filters.window === 'any' &&
+    filters.sort === 'soonest' &&
+    filters.category === null;
   const featured = isBrowsing ? filtered[0] : undefined;
 
   return (
