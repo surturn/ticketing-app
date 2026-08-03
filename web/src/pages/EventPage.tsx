@@ -377,8 +377,15 @@ export function EventPage() {
               {event.organiser.verified && <VerifiedBadge />}
             </div>
             <p className="mt-3">
+              {/* Names two specific checks — identity and payout details —
+                  because that is exactly what setting this flag means: the
+                  platform runs both before an organiser is allowed to sell.
+                  This wording is load-bearing, not a softer paraphrase we
+                  reached for; if onboarding ever stops performing either
+                  check before verifying someone, this sentence has to change
+                  with it. */}
               {event.organiser.verified
-                ? 'Eventify has vetted this organiser before allowing them to sell tickets.'
+                ? 'We have verified this organiser’s identity and payout details before letting them sell.'
                 : 'Tickets for this event are sold through Eventify, and your payment is protected the same way on every event.'}
             </p>
           </Accordion>
