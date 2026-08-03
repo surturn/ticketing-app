@@ -78,6 +78,13 @@
       "when": 1785773420223,
       "tag": "0010_slimy_gamora",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1785774347492,
+      "tag": "0011_faulty_cable",
+      "breakpoints": true
     }
   ]
 }

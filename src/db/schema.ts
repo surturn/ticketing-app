@@ -211,6 +211,22 @@ export const organisations = pgTable('organisations', {
   name: text('name').notNull(),
   /** URL-safe handle, for when organisers get their own pages. */
   slug: text('slug').notNull().unique(),
+  /**
+   * When this organiser was vetted.
+   *
+   * A timestamp rather than a boolean, matching `archived_at` and
+   * `announced_at`: knowing *when* someone was approved is worth the same
+   * column as knowing that they were, and a boolean throws that away for
+   * nothing. Null means not vetted.
+   *
+   * The storefront shows a badge only when this is set. There is deliberately
+   * no counter-badge for the null case — absence is the signal. Labelling an
+   * organiser "unverified" on the page selling their tickets is a claim about
+   * them that we would be publishing on their behalf, and the platform is
+   * onboarding vetted organisers only, so the null case is a queue rather than
+   * a judgement.
+   */
+  verifiedAt: timestamp('verified_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

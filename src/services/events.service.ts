@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
-import { events, ticketTiers, type Event, type TicketTier } from '../db/schema.js';
+import { events, organisations, ticketTiers, type Event, type TicketTier } from '../db/schema.js';
 import { cacheKeys, remember } from '../lib/cache.js';
 import { notFound } from '../lib/errors.js';
 import { availableSeats } from './inventory.service.js';
@@ -56,6 +56,14 @@ export interface PublicEvent {
    */
   fromPriceCents: number | null;
   tiers: PublicTier[];
+  /**
+   * Who is running it.
+   *
+   * Always present — `events.organisation_id` is NOT NULL, so there is no such
+   * thing as an event without an owner and no null case for a surface to cope
+   * with.
+   */
+  organiser: { name: string; slug: string; verified: boolean };
 }
 
 function toPublicTier(tier: TicketTier, currency: string): PublicTier {
@@ -122,8 +130,25 @@ export async function listPublishedEvents(): Promise<
 > {
   return remember(cacheKeys.publicEventList(), 60, async () => {
     const rows = await db
-      .select()
+      .select({
+        id: events.id,
+        slug: events.slug,
+        name: events.name,
+        description: events.description,
+        venue: events.venue,
+        posterUrl: events.posterUrl,
+        heroUrl: events.heroUrl,
+        category: events.category,
+        timezone: events.timezone,
+        currency: events.currency,
+        startsAt: events.startsAt,
+        endsAt: events.endsAt,
+        organiserName: organisations.name,
+        organiserSlug: organisations.slug,
+        organiserVerifiedAt: organisations.verifiedAt,
+      })
       .from(events)
+      .innerJoin(organisations, eq(events.organisationId, organisations.id))
       .where(
         and(
           eq(events.status, 'published'),
@@ -174,6 +199,11 @@ export async function listPublishedEvents(): Promise<
       startsAt: event.startsAt,
       endsAt: event.endsAt,
       fromPriceCents: priceByEvent.get(event.id) ?? null,
+      organiser: {
+        name: event.organiserName,
+        slug: event.organiserSlug,
+        verified: event.organiserVerifiedAt !== null,
+      },
     }));
   });
 }
@@ -194,8 +224,26 @@ export interface PastEvent extends Omit<PublicEvent, 'tiers'> {
 export async function listPastEvents(limit = 50): Promise<PastEvent[]> {
   return remember(cacheKeys.pastEventList(), 300, async () => {
     const rows = await db
-      .select()
+      .select({
+        id: events.id,
+        slug: events.slug,
+        name: events.name,
+        description: events.description,
+        venue: events.venue,
+        posterUrl: events.posterUrl,
+        heroUrl: events.heroUrl,
+        category: events.category,
+        timezone: events.timezone,
+        currency: events.currency,
+        startsAt: events.startsAt,
+        endsAt: events.endsAt,
+        archivedAt: events.archivedAt,
+        organiserName: organisations.name,
+        organiserSlug: organisations.slug,
+        organiserVerifiedAt: organisations.verifiedAt,
+      })
       .from(events)
+      .innerJoin(organisations, eq(events.organisationId, organisations.id))
       .where(
         and(
           inArray(events.status, ['published', 'closed']),
@@ -222,6 +270,11 @@ export async function listPastEvents(limit = 50): Promise<PastEvent[]> {
       fromPriceCents: null,
       archived: event.archivedAt !== null,
       archivedAt: event.archivedAt,
+      organiser: {
+        name: event.organiserName,
+        slug: event.organiserSlug,
+        verified: event.organiserVerifiedAt !== null,
+      },
     }));
   });
 }
@@ -251,9 +304,31 @@ export async function archivePastEvents(
 
 export async function getPublicEvent(slug: string): Promise<PublicEvent> {
   return remember(cacheKeys.eventBySlug(slug), 15, async () => {
-    const event = await getEventRowBySlug(slug);
+    const [event] = await db
+      .select({
+        id: events.id,
+        slug: events.slug,
+        name: events.name,
+        description: events.description,
+        venue: events.venue,
+        posterUrl: events.posterUrl,
+        heroUrl: events.heroUrl,
+        category: events.category,
+        timezone: events.timezone,
+        currency: events.currency,
+        startsAt: events.startsAt,
+        endsAt: events.endsAt,
+        status: events.status,
+        organiserName: organisations.name,
+        organiserSlug: organisations.slug,
+        organiserVerifiedAt: organisations.verifiedAt,
+      })
+      .from(events)
+      .innerJoin(organisations, eq(events.organisationId, organisations.id))
+      .where(eq(events.slug, slug))
+      .limit(1);
 
-    if (event.status !== 'published') {
+    if (!event || event.status !== 'published') {
       throw notFound(`No event with slug "${slug}"`);
     }
 
@@ -295,6 +370,11 @@ export async function getPublicEvent(slug: string): Promise<PublicEvent> {
             null,
           ) ?? null,
       tiers: tiers.map((tier) => toPublicTier(tier, event.currency)),
+      organiser: {
+        name: event.organiserName,
+        slug: event.organiserSlug,
+        verified: event.organiserVerifiedAt !== null,
+      },
     };
   });
 }
