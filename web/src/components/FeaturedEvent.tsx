@@ -99,17 +99,18 @@ export function FeaturedEvent({ event }: { event: EventSummary }) {
           </div>
         </div>
 
-        {/* The poster, at the size a poster deserves. Dropped on small screens
-            rather than shrunk to a thumbnail: the same artwork is a tap away on
-            the event page, and a 90px poster sells nothing while costing the
-            full download. */}
+        {/* The poster, at the size a poster deserves. Full width and first in
+            the stack below `lg`, so it reads as a hero the way a promoter's
+            artwork should — a 90px thumbnail sells nothing, but a phone-width
+            one does the same job the grid card does. Fixed and second beside
+            the text once there is room for both side by side. */}
         {showArtwork && (
-          <div className="hidden lg:block">
+          <div className="order-first lg:order-none">
             <img
               src={event.posterUrl!}
               alt={`Poster for ${event.name}`}
               onError={() => setArtworkFailed(true)}
-              className="aspect-4/5 w-56 border border-primary/30 object-cover shadow-2xl shadow-primary/10"
+              className="aspect-4/5 w-full border border-primary/30 object-cover object-top shadow-2xl shadow-primary/10 lg:w-56"
             />
           </div>
         )}
