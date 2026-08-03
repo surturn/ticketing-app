@@ -14,17 +14,16 @@ import {
   fieldErrors,
   previewCheckout,
   type PreviewResponse,
-  type Tier,
 } from '@/lib/api';
 import { EventHero } from '@/components/EventHero';
 import { LocalErrorBoundary } from '@/components/LocalErrorBoundary';
+import { TicketCard } from '@/components/TicketCard';
 import { useToast } from '@/components/Toasts';
-import { availabilityLabel, formatMoney } from '@/lib/format';
+import { formatMoney } from '@/lib/format';
 import { useAsync } from '@/lib/useAsync';
 import { RichText } from '@/components/RichText';
 import { useAuth } from '@/auth/AuthProvider';
 import {
-  Badge,
   Button,
   ButtonAnchor,
   ButtonLink,
@@ -47,122 +46,6 @@ const PHONE = /^(?:\+?254|0)?[17]\d{8}$/;
 
 function normalisePhoneForDisplay(raw: string): string {
   return raw.replace(/[\s-]/g, '');
-}
-
-// ─── Tier ──────────────────────────────────────────────────────────────────
-
-function TierRow({
-  tier,
-  quantity,
-  onChange,
-}: {
-  tier: Tier;
-  quantity: number;
-  onChange: (next: number) => void;
-}) {
-  const availability = availabilityLabel(tier);
-  const unavailable = !tier.onSale || tier.soldOut || tier.closedByOrganiser;
-
-  // An uncapped tier has no stock number to cap against, so the only ceiling is
-  // what one order may contain.
-  const ceiling = tier.uncapped
-    ? tier.maxPerOrder
-    : Math.min(tier.maxPerOrder, tier.available ?? 0);
-
-  // VIP and premium are one of the three sanctioned uses of gold on a consumer
-  // surface — it marks a tier as the expensive one, which is exactly the
-  // "earn" register gold carries everywhere else in the product.
-  const isVip = /vip|premium|gold/i.test(tier.name);
-
-  return (
-    <Card
-      className={`p-5 transition-colors duration-(--dur-medium) ease-(--ease-standard) ${
-        quantity > 0 ? 'bg-surface-container-highest' : ''
-      }`}
-    >
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="md-title-medium text-on-surface">{tier.name}</h3>
-            {isVip && <Badge tone="gold">VIP</Badge>}
-            <Badge tone={availability.tone === 'ok' ? 'neutral' : availability.tone}>
-              {availability.text}
-            </Badge>
-          </div>
-
-          {tier.description && (
-            <p className="md-body-medium mt-1.5 text-on-surface-variant">
-              {tier.description}
-            </p>
-          )}
-
-          {/* A price is a fact the door will check — the data face, and tabular
-              figures so a column of tiers lines up down the edge. */}
-          <p className="md-data-large mt-3 text-on-surface">
-            {formatMoney(tier.priceCents, tier.currency)}
-          </p>
-
-          {tier.maxPerOrder < 10 && !unavailable && (
-            <p className="md-data-small mt-1 text-on-surface-variant">
-              Up to {tier.maxPerOrder} per order
-            </p>
-          )}
-        </div>
-
-        {unavailable ? (
-          // Sold-out tiers stay visible and greyed rather than disappearing:
-          // a tier vanishing between two page loads reads as a bug to someone
-          // who was sent the link.
-          <p className="md-body-medium text-on-surface-variant">
-            {tier.closedByOrganiser
-              ? 'Sales have closed'
-              : tier.soldOut
-                ? 'Sold out'
-                : 'Not on sale'}
-          </p>
-        ) : (
-          // The stepper's frame is clipped like everything else; the two targets
-          // inside stay circular, because a round icon button is not the generic
-          // pill the shape change was aimed at.
-          //
-          // 48px, not 40. This is the control someone taps repeatedly on a
-          // phone, often in a queue, often one-handed — the last place to
-          // economise on target size.
-          <div className="trimmed flex items-center gap-1 border border-outline-variant bg-surface p-1">
-            <button
-              type="button"
-              onClick={() => onChange(Math.max(0, quantity - 1))}
-              disabled={quantity === 0}
-              aria-label={`Remove one ${tier.name} ticket`}
-              className="md-state flex size-12 cursor-pointer items-center justify-center rounded-full text-lg text-on-surface-variant transition-colors disabled:cursor-not-allowed disabled:opacity-30"
-            >
-              <span className="md-state-layer" aria-hidden="true" />
-              <span className="relative">−</span>
-            </button>
-
-            <span
-              className="md-data-large w-8 text-center text-on-surface"
-              aria-live="polite"
-              aria-label={`${quantity} ${tier.name} tickets`}
-            >
-              {quantity}
-            </span>
-
-            <button
-              type="button"
-              onClick={() => onChange(Math.min(ceiling, quantity + 1))}
-              disabled={quantity >= ceiling}
-              aria-label={`Add one ${tier.name} ticket`}
-              className="md-state flex size-12 cursor-pointer items-center justify-center rounded-full text-lg text-on-surface-variant transition-colors disabled:cursor-not-allowed disabled:opacity-30"
-            >
-              <span className="md-state-layer" aria-hidden="true" />
-              <span className="relative">+</span>
-            </button>
-          </div>
-        )}
-      </div>
-    </Card>
-  );
 }
 
 // ─── Page ──────────────────────────────────────────────────────────────────
@@ -421,7 +304,7 @@ export function EventPage() {
 
         <div className="space-y-3">
           {event.tiers.map((tier) => (
-            <TierRow
+            <TicketCard
               key={tier.id}
               tier={tier}
               quantity={basket[tier.id] ?? 0}
