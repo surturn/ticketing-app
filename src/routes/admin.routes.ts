@@ -7,14 +7,13 @@ import { z } from 'zod';
 import { db, withTransaction } from '../db/client.js';
 import {
   events,
-  organisations,
   orders,
   payments,
   ticketTiers,
   tickets,
 } from '../db/schema.js';
 import { invalidateEvent } from '../lib/cache.js';
-import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js';
+import { badRequest, conflict, notFound } from '../lib/errors.js';
 import {
   MAX_UPLOAD_BYTES,
   readLimited,
@@ -36,6 +35,7 @@ import {
   eventScopeFilter,
   loadScopedEvent,
   organisationForNewEvent,
+  verifyOrganisation,
 } from '../services/tenancy.service.js';
 import { enqueueEventAnnouncement } from '../queue/queues.js';
 import { archivePastEvents } from '../services/events.service.js';
@@ -622,27 +622,17 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const { id } = idParams.parse(request.params);
     const body = z.object({ verified: z.boolean() }).strict().parse(request.body);
 
-    // Platform-only. An organisation-scoped admin authenticates as itself, and
-    // letting that scope reach this route would let an organiser vet its own
-    // account — exactly the self-service path this endpoint exists to close off.
-    if (scope(request).kind !== 'platform') {
-      throw forbidden('Only the platform may verify an organisation');
-    }
-
-    const [updated] = await db
-      .update(organisations)
-      .set({ verifiedAt: body.verified ? new Date() : null, updatedAt: new Date() })
-      .where(eq(organisations.id, id))
-      .returning({ id: organisations.id, verifiedAt: organisations.verifiedAt });
-
-    if (!updated) throw notFound(`No organisation with id ${id}`);
+    // The platform-only check and the update itself live in tenancy.service.ts,
+    // alongside the rest of the scope enforcement — and so does its test
+    // coverage, next to "refuses to load another organisation's event".
+    const updated = await verifyOrganisation(scope(request), id, body.verified);
 
     request.log.info(
-      { organisationId: updated.id, verified: body.verified },
+      { organisationId: updated.id, verified: updated.verified },
       'organisation verification changed',
     );
 
-    return { organisation: { id: updated.id, verified: updated.verifiedAt !== null } };
+    return { organisation: updated };
   });
 
   // ─── Tiers ──────────────────────────────────────────────────────────────
