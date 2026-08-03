@@ -8,6 +8,7 @@ import { renderEmail, type DetailRow, type EmailLayout } from '../../lib/email-t
 import { AppError } from '../../lib/errors.js';
 import { formatMoney } from '../../lib/money.js';
 import { logger } from '../../lib/logger.js';
+import { qrDataUrl } from '../../lib/qr.js';
 import { createQueueClient } from '../../lib/redis.js';
 import { getOrderByReference, getOrderById } from '../../services/orders.service.js';
 import { welcomeContent } from '../../services/users.service.js';
@@ -238,7 +239,10 @@ async function build(job: NotificationJob): Promise<Delivery | null> {
   // purchase, and there is no order to fetch.
   if (job.kind === 'account-welcome') return buildWelcome(job);
 
-  const order = await getOrderById(job.orderId);
+  // Trusted: this is the system building the buyer's own ticket email, not an
+  // external viewer reading a forwarded link, so the redaction in
+  // `orders.service.ts` that protects against exactly that does not apply.
+  const order = await getOrderById(job.orderId, { uid: null, trusted: true });
 
   const to = { email: order.buyer.email, phone: order.buyer.phone };
   const total = formatMoney(order.totalCents, order.currency);
@@ -249,6 +253,19 @@ async function build(job: NotificationJob): Promise<Delivery | null> {
       const lines = order.tickets
         .map((ticket) => `  ${ticket.tierName.padEnd(16)} ${ticket.code}`)
         .join('\n');
+
+      // Every ticket gets a scannable QR in the email itself — the gate needs
+      // it and a guest checkout, which is the default, never signs in to see
+      // the one on the order page. `ticket.qr` is populated because `order`
+      // was fetched with `trusted: true` above.
+      const ticketQrs = await Promise.all(
+        order.tickets.map(async (ticket) => ({
+          label: ticket.tierName,
+          code: ticket.code!,
+          dataUrl: await qrDataUrl(ticket.qr!),
+        })),
+      );
+
       return {
         to,
         // The event name in the subject, not the reference. It is what someone
@@ -261,30 +278,24 @@ async function build(job: NotificationJob): Promise<Delivery | null> {
           `  ${one ? 'Ticket' : 'Tickets'}\n${lines}\n\n` +
           `  Order    ${order.reference}\n  Paid     ${total}\n\n` +
           `At the door\n` +
-          `Open the link below and show the QR code. Each code admits one\n` +
-          `person once, so everyone coming with you needs their own. The page\n` +
-          `works without signal once you have opened it — worth doing before\n` +
-          `you set off rather than in the queue.` +
+          `Show the QR code${one ? '' : 's'} below on your phone. Each one admits one\n` +
+          `person once, so everyone coming with you needs their own. No signal\n` +
+          `needed — it is already in this email.` +
           orderLink(order) +
           signOff(),
         layout: {
           heading: one ? 'Your ticket is ready' : 'Your tickets are ready',
           intro: [
             `Hi ${properName(order.buyer.name)},`,
-            `You're going. ${one ? 'Your ticket is' : 'Your tickets are'} below and on your order page.`,
+            `You're going. ${one ? 'Your ticket is' : 'Your tickets are'} below.`,
           ],
-          details: [
-            ...detailRows(order, total),
-            {
-              label: one ? 'Ticket' : 'Tickets',
-              value: order.tickets.map((t) => `${t.tierName} ${t.code}`).join('  ·  '),
-            },
-          ],
+          details: detailRows(order, total),
+          tickets: ticketQrs,
           section: {
             title: 'At the door',
             body: [
-              'Open your order page and show the QR code. Each code admits one person once, so everyone coming with you needs their own.',
-              'The page works without signal once you have opened it. Worth doing before you set off rather than in the queue.',
+              `Show the QR code${one ? '' : 's'} above on your phone. Each one admits one person once, so everyone coming with you needs their own.`,
+              'No signal needed at the gate — the code is already in this email. Your order page has the same tickets if you ever need them again.',
             ],
           },
           ...(orderUrl(order)
