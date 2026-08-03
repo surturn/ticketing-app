@@ -44,7 +44,7 @@ function RailCard({ event }: { event: EventSummary }) {
       >
         <div
           style={transitioning ? { viewTransitionName: 'poster' } : undefined}
-          className={`md-elevation-1 relative aspect-4/5 overflow-hidden rounded-md transition-shadow duration-[--dur-medium] ${
+          className={`md-elevation-1 relative aspect-4/5 overflow-hidden rounded-md transition-shadow duration-(--dur-medium) ${
             soldOut ? 'opacity-60' : ''
           }`}
         >

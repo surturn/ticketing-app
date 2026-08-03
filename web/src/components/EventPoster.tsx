@@ -129,7 +129,7 @@ export function EventPoster({
             before the image arrives, what keeps CLS at zero. */}
         <div
           style={transitioning ? { viewTransitionName: 'poster' } : undefined}
-          className={`md-elevation-1 relative aspect-4/5 overflow-hidden rounded-md transition-shadow duration-[--dur-medium] ease-[--ease-standard] group-hover:md-elevation-2 ${
+          className={`md-elevation-1 relative aspect-4/5 overflow-hidden rounded-md transition-shadow duration-(--dur-medium) ease-(--ease-standard) group-hover:md-elevation-2 ${
             soldOut ? 'opacity-60' : ''
           }`}
         >

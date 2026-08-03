@@ -75,7 +75,7 @@ function TierRow({
 
   return (
     <Card
-      className={`p-5 transition-colors duration-[--dur-medium] ease-[--ease-standard] ${
+      className={`p-5 transition-colors duration-(--dur-medium) ease-(--ease-standard) ${
         quantity > 0 ? 'bg-surface-container-highest' : ''
       }`}
     >
