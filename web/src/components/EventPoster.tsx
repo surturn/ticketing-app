@@ -16,6 +16,7 @@ import { Link, useViewTransitionState } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { prefetchEvent, type EventSummary } from '@/lib/api';
 import { formatMoney } from '@/lib/format';
+import { ShareButton } from './ShareSheet';
 
 function posterDate(iso: string, timezone: string) {
   const parts = new Intl.DateTimeFormat('en-KE', {
@@ -169,6 +170,15 @@ export function EventPoster({
               <span className="md-label-medium text-on-surface-variant">Sold out</span>
             </div>
           )}
+
+          {/* Discovery here runs on forwarded links more than on this grid, so
+              the share sheet is one tap away from the artwork itself rather
+              than buried on the event page. Shifted up clear of "Sold out"
+              when both are showing, rather than stacking on top of it. */}
+          <ShareButton
+            event={event}
+            className={`absolute right-3 z-10 size-9 shadow-lg ${soldOut ? 'bottom-14' : 'bottom-3'}`}
+          />
 
           {/* Ring on approach, contained inside the frame so nothing shifts. */}
           <div

@@ -7,9 +7,10 @@
  */
 import { useState, type ReactNode } from 'react';
 import { Link, NavLink } from 'react-router-dom';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from '@/auth/AuthProvider';
 import { WelcomeModal } from '@/auth/WelcomeModal';
-import { ThemeToggle } from '@/lib/theme';
+import { ThemeToggle, useTheme } from '@/lib/theme';
 import { ButtonLink } from '@/components/ui';
 import { ConsentBanner } from '@/components/ConsentBanner';
 
@@ -17,10 +18,6 @@ function Wordmark() {
   return (
     <Link
       to="/"
-      /* `shrink-0`, and no `overflow-hidden`. Letting it shrink is what produced
-         "Eventify Tic" on a phone — a logotype sliced through a word looks more
-         broken than anything it was making room for. It now keeps its width and
-         the second word is dropped wholesale below `sm` instead. */
       className="group inline-flex shrink-0 items-center gap-2 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary sm:gap-2.5"
       aria-label="Eventify Tickets — home"
     >
@@ -51,14 +48,108 @@ function Wordmark() {
         <circle cx="16" cy="21" r="1.6" style={{ fill: 'var(--blue-10)' }} opacity="0.85" />
       </svg>
 
-      {/* Never wraps and never truncates. Below `sm` the second word is hidden
-          outright rather than sliced — "Eventify" alone is a wordmark, whereas
-          "Eventify Tic" is a rendering bug. */}
+      {/* Full label at every width. It used to drop "Tickets" below `sm` because
+          four inline controls plus a wordmark had nowhere else to give up the
+          room — now that those controls collapse into a menu on a phone, the
+          wordmark can stay whole instead of standing in for the brand. */}
       <span className="font-display text-base leading-none font-extrabold tracking-tight whitespace-nowrap text-on-surface sm:text-lg">
-        Eventify
-        <span className="hidden text-primary sm:inline"> Tickets</span>
+        Eventify<span className="text-primary"> Tickets</span>
       </span>
     </Link>
+  );
+}
+
+/** The hamburger / close glyph, morphing between the two rather than swapping icons. */
+function MenuGlyph({ open }: { open: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" className="size-5" fill="none" aria-hidden="true">
+      <path
+        d={open ? 'M6 6l12 12' : 'M4 7h16'}
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+      />
+      <path
+        d="M4 12h16"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        className="transition-opacity"
+        opacity={open ? 0 : 1}
+      />
+      <path
+        d={open ? 'M6 18L18 6' : 'M4 17h16'}
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+/**
+ * Everything below `sm` that used to sit inline: Events, the account link,
+ * and the theme switch. Named in the menu rather than left as an icon —
+ * there is room for a word here that there never was in the bar itself.
+ *
+ * Host keeps its own button outside this menu (see `AppShell`) rather than
+ * joining it, for the same reason the bar always gave it a place of its own:
+ * an organiser on a phone is the customer, and burying the one thing they
+ * came for behind a tap into a menu would be the wrong economy.
+ */
+function MobileMenu({ onNavigate }: { onNavigate: () => void }) {
+  const { accountsAvailable, status } = useAuth();
+  const { resolved, toggle } = useTheme();
+  const goingTo = resolved === 'dark' ? 'light' : 'dark';
+
+  const itemClass =
+    'md-label-large trimmed flex items-center rounded-md px-4 py-3 transition-colors text-on-surface-variant hover:bg-tertiary/14 hover:text-on-surface';
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -8 }}
+      transition={{ duration: 0.15 }}
+      className="absolute inset-x-4 top-full z-40 mt-2 overflow-hidden rounded-md border border-outline-variant bg-surface-container-high shadow-xl sm:hidden"
+      role="menu"
+    >
+      <NavLink
+        to="/"
+        end
+        onClick={onNavigate}
+        className={({ isActive }) =>
+          `${itemClass} ${isActive ? 'bg-primary-container text-on-primary-container' : ''}`
+        }
+        role="menuitem"
+      >
+        Events
+      </NavLink>
+
+      {accountsAvailable &&
+        (status === 'signed-in' ? (
+          <NavLink to="/account" onClick={onNavigate} className={itemClass} role="menuitem">
+            My tickets
+          </NavLink>
+        ) : (
+          <Link to="/signin" onClick={onNavigate} className={itemClass} role="menuitem">
+            Sign in
+          </Link>
+        ))}
+
+      <button
+        type="button"
+        onClick={() => {
+          toggle();
+          onNavigate();
+        }}
+        className={`${itemClass} w-full justify-between text-left`}
+        role="menuitem"
+      >
+        <span>{resolved === 'dark' ? 'Light mode' : 'Dark mode'}</span>
+        <span className="md-body-small text-on-surface-variant">Switch to {goingTo}</span>
+      </button>
+    </motion.div>
   );
 }
 
@@ -174,6 +265,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   // `user` is no longer read here: the account link names its destination
   // rather than the person signed into it.
   const { status, accountsAvailable } = useAuth();
+  const [menuOpen, setMenuOpen] = useState(false);
 
   return (
     <div className="flex min-h-dvh flex-col">
@@ -187,63 +279,62 @@ export function AppShell({ children }: { children: ReactNode }) {
           off the main thread — a per-frame layout read is the last thing a
           mid-range Android needs while a poster grid is decoding. */}
       <header className="header-lift sticky top-0 z-40 border-b border-outline-variant/60 bg-surface-container-low">
-        {/* `gap-2` on a phone, not `gap-4`: four controls plus a wordmark is
-            already tight at 360px, and the wasted gutters were what forced the
-            logotype onto two lines. */}
-        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-2 px-4 sm:h-16 sm:gap-4 sm:px-6">
+        {/* `relative`, so the mobile menu below can anchor to this bar rather
+            than to the page — `top-full` needs a positioned ancestor to mean
+            anything. */}
+        <div className="relative mx-auto flex h-14 max-w-6xl items-center justify-between gap-2 px-4 sm:h-16 sm:gap-4 sm:px-6">
           <Wordmark />
 
           {/* `shrink-0` so the nav keeps its size and the wordmark truncates
               instead — the controls are what people came to press. */}
           <nav className="flex shrink-0 items-center gap-1" aria-label="Main">
-            <ThemeToggle />
+            {/* Theme and Events move into the mobile menu below `sm` — see
+                `MobileMenu`. Kept inline above it, where the width for them
+                already exists. */}
+            <span className="hidden sm:contents">
+              <ThemeToggle />
 
-            {/* The wordmark already goes home, so this is redundant on a phone
-                and was costing width the account controls needed. */}
-            {/* The active class has to come from the render prop, not from a
-                hardcoded `isActive: false` — passing the flag by hand meant
-                this link could never light up, whatever page you were on. */}
-            <NavLink
-              to="/"
-              end
-              className={({ isActive }) => `${navClass({ isActive })} hidden sm:inline-flex`}
-            >
-              Events
-            </NavLink>
+              <NavLink
+                to="/"
+                end
+                className={({ isActive }) => `${navClass({ isActive })} hidden sm:inline-flex`}
+              >
+                Events
+              </NavLink>
+            </span>
 
-            {accountsAvailable &&
-              (status === 'signed-in' ? (
-                <NavLink to="/account" className={navClass}>
-                  {/* Names the destination, not the person.
+            {accountsAvailable && (
+              <span className="hidden sm:contents">
+                {status === 'signed-in' ? (
+                  <NavLink to="/account" className={navClass}>
+                    {/* Names the destination, not the person.
 
-                      The first name was the more personal label and the less
-                      useful one: it told a buyer who they were, which they
-                      knew, while leaving what sits behind the link to be
-                      guessed. Someone who has just paid is looking for their
-                      tickets, and "Events / My tickets / Host an event" reads
-                      as three places to go rather than two places and a
-                      greeting. It also stops the bar changing width with the
-                      length of whoever is signed in. */}
-                  My tickets
-                </NavLink>
-              ) : (
-                // A button, not a text link. Signing in is one of the two things
-                // anyone comes to this bar to do, and rendering it as prose
-                // beside a pill made it read as a caption for the pill.
-                // Tonal rather than filled: it must not out-shout the buy action
-                // on an event page, and §7.5 allows only one filled per view.
-                // 36px and tight padding on a phone, 40 above it. The 48px
-                // floor is for the controls a purchase depends on; a bar with
-                // four items at 48 leaves no room for the wordmark, and this
-                // one is still a comfortable target at 36 because it is wide.
-                <ButtonLink
-                  to="/signin"
-                  variant="tonal"
-                  className="h-9 px-3 text-sm whitespace-nowrap sm:h-10 sm:px-4 sm:text-base"
-                >
-                  Sign in
-                </ButtonLink>
-              ))}
+                        The first name was the more personal label and the less
+                        useful one: it told a buyer who they were, which they
+                        knew, while leaving what sits behind the link to be
+                        guessed. Someone who has just paid is looking for their
+                        tickets, and "Events / My tickets / Host an event" reads
+                        as three places to go rather than two places and a
+                        greeting. It also stops the bar changing width with the
+                        length of whoever is signed in. */}
+                    My tickets
+                  </NavLink>
+                ) : (
+                  // A button, not a text link. Signing in is one of the two things
+                  // anyone comes to this bar to do, and rendering it as prose
+                  // beside a pill made it read as a caption for the pill.
+                  // Tonal rather than filled: it must not out-shout the buy action
+                  // on an event page, and §7.5 allows only one filled per view.
+                  <ButtonLink
+                    to="/signin"
+                    variant="tonal"
+                    className="h-10 px-4 text-base whitespace-nowrap"
+                  >
+                    Sign in
+                  </ButtonLink>
+                )}
+              </span>
+            )}
 
             {/* The organiser door, and the only gold on a consumer surface: it
                 does not accent anything, it means "this leads to the side of
@@ -253,7 +344,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                 Narrow screens get the short label rather than losing the
                 control — an organiser arriving from a phone is the customer,
                 and burying the one thing they came for in an overflow menu
-                would be the wrong economy. */}
+                would be the wrong economy. Unlike Events, Sign in and the
+                theme switch, Host stays outside the mobile menu for exactly
+                that reason. */}
             <ButtonLink
               to="/host"
               variant="outlined-gold"
@@ -262,7 +355,39 @@ export function AppShell({ children }: { children: ReactNode }) {
               <span className="sm:hidden">Host</span>
               <span className="hidden sm:inline">Host an event</span>
             </ButtonLink>
+
+            {/* The menu button itself, and everything it opens. Below `sm`
+                only — above it, every control it would otherwise hold is
+                already inline. */}
+            <button
+              type="button"
+              onClick={() => setMenuOpen((open) => !open)}
+              aria-expanded={menuOpen}
+              aria-haspopup="menu"
+              aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+              className="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-on-surface-variant transition hover:bg-tertiary/14 hover:text-on-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary sm:hidden"
+            >
+              <MenuGlyph open={menuOpen} />
+            </button>
           </nav>
+
+          <AnimatePresence>
+            {menuOpen && <MobileMenu onNavigate={() => setMenuOpen(false)} />}
+          </AnimatePresence>
+
+          {/* A tap anywhere outside the menu closes it. Transparent and
+              beneath the menu itself, above the page — the same job a
+              backdrop does for a dialog, without dimming the page behind a
+              control this casual. */}
+          {menuOpen && (
+            <button
+              type="button"
+              aria-label="Close menu"
+              tabIndex={-1}
+              onClick={() => setMenuOpen(false)}
+              className="fixed inset-0 z-30 cursor-default sm:hidden"
+            />
+          )}
         </div>
       </header>
 
