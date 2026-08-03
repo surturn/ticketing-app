@@ -39,6 +39,8 @@ export interface PublicEvent {
   description: string | null;
   venue: string | null;
   posterUrl: string | null;
+  heroUrl: string | null;
+  category: string | null;
   timezone: string;
   currency: string;
   startsAt: Date;
@@ -165,6 +167,8 @@ export async function listPublishedEvents(): Promise<
       description: event.description,
       venue: event.venue,
       posterUrl: event.posterUrl,
+      heroUrl: event.heroUrl,
+      category: event.category,
       timezone: event.timezone,
       currency: event.currency,
       startsAt: event.startsAt,
@@ -208,6 +212,8 @@ export async function listPastEvents(limit = 50): Promise<PastEvent[]> {
       description: event.description,
       venue: event.venue,
       posterUrl: event.posterUrl,
+      heroUrl: event.heroUrl,
+      category: event.category,
       timezone: event.timezone,
       currency: event.currency,
       startsAt: event.startsAt,
@@ -273,6 +279,8 @@ export async function getPublicEvent(slug: string): Promise<PublicEvent> {
       description: event.description,
       venue: event.venue,
       posterUrl: event.posterUrl,
+      heroUrl: event.heroUrl,
+      category: event.category,
       timezone: event.timezone,
       currency: event.currency,
       startsAt: event.startsAt,

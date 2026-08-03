@@ -18,6 +18,7 @@ import {
   MAX_UPLOAD_BYTES,
   readLimited,
   sniffImageType,
+  storeImage,
   storePoster,
 } from '../lib/storage.js';
 import { logger } from '../lib/logger.js';
@@ -81,6 +82,31 @@ const eventFields = z
         (value) => value.startsWith('https://'),
         'Must be an https:// URL — browsers block insecure images on a secure page',
       )
+      .optional(),
+
+    /**
+     * The cinematic banner. Same https rule as the poster, and for the same
+     * reason: the storefront puts this straight into an <img>, and a browser
+     * blocks an insecure source on a secure page — the hero would simply not
+     * appear, with nothing to explain why.
+     */
+    heroUrl: z
+      .string()
+      .url('Must be a full URL, including https://')
+      .max(2_000)
+      .refine(
+        (value) => value.startsWith('https://'),
+        'Must be an https:// URL — browsers block insecure images on a secure page',
+      )
+      .optional(),
+
+    /**
+     * Checked against a fixed list rather than accepted as free text. The
+     * storefront groups the homepage by this value, and a one-off spelling
+     * would silently create a category of one that nobody can find.
+     */
+    category: z
+      .enum(['music', 'comedy', 'business', 'sports', 'festival', 'arts', 'other'])
       .optional(),
     // Validated against the runtime's own tz database rather than a length
     // bound: an unknown zone would otherwise only surface much later, when
@@ -274,6 +300,65 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       );
 
       return reply.status(201).send({ poster: stored });
+    },
+  );
+
+  /**
+   * Accepts an image from the organiser's device and returns its URL.
+   *
+   * Admin-only, like everything else in this scope. That matters more here than
+   * elsewhere: an open image upload is a free file host, and a free file host
+   * attached to a real domain is used within days for things nobody wants their
+   * domain associated with.
+   *
+   * Returns a URL rather than attaching it to an event. Upload and save stay
+   * separate so an organiser can change their mind about the artwork without
+   * having created an event first, and so a failed save does not lose the file
+   * they just waited to upload.
+   */
+  app.post(
+    '/api/admin/uploads/hero',
+    {
+      config: {
+        // Uploads are expensive in bandwidth and storage in a way JSON is not.
+        rateLimit: LIMITS.upload,
+      },
+    },
+    async (request, reply) => {
+      const file = await request.file({
+        limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 },
+      });
+
+      if (!file) throw badRequest('No image was uploaded.');
+
+      const body = await readLimited(file.file);
+
+      // Fastify sets this when its own limit trips mid-stream. Checked because
+      // the truncated buffer would otherwise be stored as a valid, broken image.
+      if (file.file.truncated) {
+        throw badRequest('That image is larger than 2MB. Please use a smaller file.');
+      }
+
+      /**
+       * The bytes decide the type, not the filename or the browser's header.
+       * Both of those are supplied by the client, and a file claiming to be a
+       * PNG while actually being an HTML document is the whole attack.
+       */
+      const contentType = sniffImageType(body);
+      if (!contentType) {
+        throw badRequest(
+          'That file is not a PNG, JPEG or WebP image. Please upload one of those.',
+        );
+      }
+
+      const stored = await storeImage(body, contentType, 'heroes');
+
+      request.log.info(
+        { key: stored.key, bytes: stored.bytes, contentType },
+        'hero uploaded',
+      );
+
+      return reply.status(201).send({ hero: stored });
     },
   );
 
