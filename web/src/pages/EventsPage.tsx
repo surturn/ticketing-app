@@ -24,7 +24,9 @@ import { EventPoster } from '@/components/EventPoster';
 import { FeaturedEvent } from '@/components/FeaturedEvent';
 import { EventRail } from '@/components/EventRail';
 import { HomeHero } from '@/components/HomeHero';
+import { Section } from '@/components/Section';
 import { TrustBar, BUYER_TRUST } from '@/components/TrustBar';
+import { CATEGORY_LABELS, CATEGORY_ORDER } from '@/lib/eventImages';
 import {
   applyFilters,
   DEFAULT_FILTERS,
@@ -125,6 +127,33 @@ export function EventsPage() {
       {!loading && !error && events.length >= 4 && (
         <EventRail title="Happening soon" events={events.slice(0, 10)} />
       )}
+
+      {/* One rail per category that has enough behind it to be worth scrolling.
+          Three is the floor: with two, a rail is a grid of two rotated ninety
+          degrees, and a section heading over almost nothing reads as a category
+          that is failing rather than one that is starting. */}
+      {!loading &&
+        !error &&
+        isBrowsing &&
+        CATEGORY_ORDER.map((category) => {
+          const inCategory = events.filter((e) => e.category === category);
+          if (inCategory.length < 3) return null;
+
+          return (
+            <Section
+              key={category}
+              id={`category-${category}`}
+              title={CATEGORY_LABELS[category]}
+              action={{ to: '#whats-on', label: 'View all' }}
+            >
+              <EventRail
+                title={CATEGORY_LABELS[category]}
+                events={inCategory.slice(0, 10)}
+                headed={false}
+              />
+            </Section>
+          );
+        })}
 
       {/* Discovery starts here. Headed and anchored so the section is navigable
           rather than being an unlabelled grid hanging off the bottom. */}

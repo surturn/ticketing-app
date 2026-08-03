@@ -6,10 +6,12 @@
  * the right trade while a city's worth of events fits in one response; if the
  * listing ever outgrows that, this moves server-side behind the same props.
  *
- * There is no "event type" control. The API has no category field, and a filter
- * that silently matched nothing would be worse than its absence.
+ * The category control filters on the event's own category. Events created
+ * before categories existed have none, and are reachable through every other
+ * control rather than being hidden behind a chip they can never match.
  */
-import type { EventSummary } from '@/lib/api';
+import type { EventCategory, EventSummary } from '@/lib/api';
+import { CATEGORY_LABELS, CATEGORY_ORDER } from '@/lib/eventImages';
 
 export type DateWindow = 'any' | 'weekend' | 'month';
 export type SortOrder = 'soonest' | 'cheapest';
@@ -27,6 +29,8 @@ export interface FilterState {
    * few hours depending on where they are standing.
    */
   onDate: string;
+  /** null means every category. */
+  category: EventCategory | null;
 }
 
 export const DEFAULT_FILTERS: FilterState = {
@@ -34,6 +38,7 @@ export const DEFAULT_FILTERS: FilterState = {
   window: 'any',
   sort: 'soonest',
   onDate: '',
+  category: null,
 };
 
 /** The event's calendar day *in its own time zone*, as `YYYY-MM-DD`. */
@@ -78,6 +83,8 @@ export function applyFilters(
         .toLowerCase();
       if (!haystack.includes(needle)) return false;
     }
+
+    if (filters.category && event.category !== filters.category) return false;
 
     // A picked day wins over the window chips: it is the more specific answer,
     // and honouring both would let "This weekend" silently empty a search for
@@ -234,6 +241,21 @@ export function EventFilters({
               onClick={() => onChange({ ...filters, window: option.value })}
             >
               {option.label}
+            </Chip>
+          ))}
+
+          {CATEGORY_ORDER.map((category) => (
+            <Chip
+              key={category}
+              active={filters.category === category}
+              onClick={() =>
+                onChange({
+                  ...filters,
+                  category: filters.category === category ? null : category,
+                })
+              }
+            >
+              {CATEGORY_LABELS[category]}
             </Chip>
           ))}
 
