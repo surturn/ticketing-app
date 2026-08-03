@@ -23,7 +23,8 @@ import { selectUpcoming, UpcomingTickets } from '@/components/UpcomingTickets';
 import { EventPoster } from '@/components/EventPoster';
 import { FeaturedEvent } from '@/components/FeaturedEvent';
 import { EventRail } from '@/components/EventRail';
-import { StageHero } from '@/components/StageHero';
+import { HomeHero } from '@/components/HomeHero';
+import { TrustBar, BUYER_TRUST } from '@/components/TrustBar';
 import {
   applyFilters,
   DEFAULT_FILTERS,
@@ -107,8 +108,16 @@ export function EventsPage() {
           }
         />
       ) : (
-        <StageHero events={events} />
+        <HomeHero
+          events={events}
+          query={filters.query}
+          onQueryChange={(query) => setFilters((f) => ({ ...f, query }))}
+        />
       )}
+
+      <div className="mb-(--space-section-sm) sm:mb-(--space-section)">
+        <TrustBar items={BUYER_TRUST} />
+      </div>
 
       {/* A rail of what is closest, above the full grid.
           Only worth the space once there is enough behind it to scroll — with
