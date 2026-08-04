@@ -88,7 +88,14 @@ export function EventPage() {
   const [touched, setTouched] = useState<Record<string, boolean>>({});
 
   const [posterFailed, setPosterFailed] = useState(false);
-  const [preview, setPreview] = useState<PreviewResponse | null>(null);
+  /**
+   * The preview, tagged with what it was priced for.
+   *
+   * Storing the key alongside the value — rather than trusting the caller to
+   * have checked it before writing — is what lets every *reader* below be the
+   * enforcement point instead of every *writer*. See `currentPreview`.
+   */
+  const [preview, setPreview] = useState<{ key: string; value: PreviewResponse } | null>(null);
   const [working, setWorking] = useState<'preview' | 'paying' | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   /** Per-field objections from the server, keyed by field name. */
@@ -185,8 +192,34 @@ export function EventPage() {
    * and whose handset gets the M-Pesa prompt. Either one moving under it
    * makes the preview on screen a lie, which is the failure mode both bugs
    * below come from — one where the basket moved, one where the buyer did.
+   *
+   * Encoded with `JSON.stringify` rather than joined with a separator
+   * character. A `|`-joined string collides: a buyer named `Jane|07123456789`
+   * with an empty next field produces the same key as one named `Jane` whose
+   * phone is `07123456789` — two different orders that hash identically,
+   * which lets a real change in what is being charged hide behind a key that
+   * did not appear to move. `JSON.stringify` on the array preserves each
+   * field's boundary (its own quoting and length-prefixing per element), so
+   * no value a buyer can type in a name, email or phone field can forge a
+   * collision with another set of values.
    */
-  const previewKey = `${basketKey}|${buyer.name}|${buyer.email}|${buyer.phone}`;
+  const previewKey = JSON.stringify([basketKey, buyer.name, buyer.email, buyer.phone]);
+
+  /**
+   * The preview, but only while it still describes what is on screen.
+   *
+   * This is the actual fix, not the ref guard below. Every consumer in this
+   * component reads `currentPreview`, never `preview` — so a stale preview
+   * (basket or buyer moved on since it was priced) does not merely get
+   * caught before being written, it stops existing as far as the UI is
+   * concerned the instant `previewKey` changes, on the very same render. A
+   * bug that skips the write-side guard, or a future call site that forgets
+   * it exists, still cannot display or charge a stale figure, because there
+   * is no code path that reads `preview` directly. Filtering at the point of
+   * use turns "guard every writer" into "there is only one reader, and it is
+   * already correct."
+   */
+  const currentPreview = preview && preview.key === previewKey ? preview.value : null;
 
   /**
    * `handleReview` closes over whatever `previewKey` was at the moment it was
@@ -206,12 +239,23 @@ export function EventPage() {
   /**
    * Invalidates the preview on any change to what it was priced against.
    *
-   * This duplicates the synchronous `setPreview(null)` in the tier
+   * Also redundant with `currentPreview`, and also deliberately so.
+   * `currentPreview` already stops a stale preview from being read the
+   * instant `previewKey` changes — this effect clearing the underlying state
+   * is not what prevents the bug. What it buys instead: without it, `preview`
+   * would sit forever holding the last value ever fetched, tagged with a key
+   * that no longer matches anything, growing more stale with every basket or
+   * buyer edit the whole session through. That is a memory leak and a
+   * confusing `preview` value for anything that inspects raw state, not a
+   * pricing bug — `currentPreview` already made it inert — but there is no
+   * reason to let dead data accumulate when clearing it is one line. This
+   * also duplicates the synchronous `setPreview(null)` in the tier
    * `onChange` below on purpose — that one exists because an effect only
    * runs after the render it was scheduled by, so without it a new basket
-   * would render for one frame beside a preview priced for the old one, next
-   * to a Pay button that is about to charge the new total. This effect is
-   * the net underneath it: it also covers every path that isn't a tier
+   * would render for one frame with `preview` still holding the old value
+   * (harmless now that `currentPreview` filters every read, but there is no
+   * reason to rely on that alone when a one-line synchronous clear is free).
+   * This effect is the net underneath it: it also covers every path that isn't a tier
    * click, chiefly the buyer editing their name, email or phone, which has
    * no equivalent synchronous handler. Do not remove either half — the
    * overlap on the basket path is deliberate, not an oversight.
@@ -230,17 +274,21 @@ export function EventPage() {
     try {
       const result = await previewCheckout({ eventSlug: slug, items, buyer });
 
-      // The basket or buyer may have moved on while this was in flight. If
-      // so, `result` is priced and validated against a basket that no longer
-      // exists on screen — applying it would resurrect the exact bug this
-      // guard exists to prevent: a buyer who added a third ticket sees the
-      // two-ticket total, confirms it, and `handlePay` then charges for
-      // three. Stop here and touch no state. The invalidating effect above
-      // has already cleared the preview for the new basket; there is nothing
-      // stale left to clean up, only a result to discard.
+      // Belt and braces, deliberately redundant with `currentPreview` above.
+      // `currentPreview` is what actually keeps a stale figure off the
+      // screen — it filters at read time, so even a write this guard failed
+      // to catch could never be displayed or charged. This check exists
+      // anyway for two reasons that are about the write, not the read: (1)
+      // it skips a pointless state update and re-render on every keystroke
+      // typed while a preview request is in flight, and (2) it means a
+      // `console.log(preview)` or a future consumer that reads the raw state
+      // instead of `currentPreview` still sees something sane rather than a
+      // value tagged for a basket that no longer exists. On a payment path,
+      // catching the problem in two independent places is worth the few
+      // extra lines even though the second one alone is sufficient.
       if (previewKeyRef.current !== requestedKey) return;
 
-      setPreview(result);
+      setPreview({ key: requestedKey, value: result });
     } catch (caught) {
       // Same staleness guard on the failure path, and for the same reason: a
       // validation error from a request fired against the old basket or
@@ -631,7 +679,7 @@ export function EventPage() {
                   issues — the two things most likely to arrive in a form this
                   component did not expect. A throw here would otherwise take the
                   whole event page down, including the tiers the buyer came for. */}
-              {preview && (
+              {currentPreview && (
                 <LocalErrorBoundary
                   label="the price summary"
                   onRetry={() => setPreview(null)}
@@ -640,20 +688,20 @@ export function EventPage() {
                   <p className="md-body-medium text-on-surface-variant">
                     Charging{' '}
                     <span className="md-data-medium text-on-surface">
-                      {formatMoney(preview.totalCents, event.currency)}
+                      {formatMoney(currentPreview.totalCents, event.currency)}
                     </span>{' '}
                     to
                   </p>
                   <p className="md-data-large mt-0.5 text-on-surface">
-                    {preview.buyer.phone}
+                    {currentPreview.buyer.phone}
                   </p>
                   <p className="md-body-small mt-2 text-on-surface-variant">
-                    Held for {preview.holdMinutes} minutes once you pay.
+                    Held for {currentPreview.holdMinutes} minutes once you pay.
                   </p>
 
-                  {!preview.chargeable && preview.issues.length > 0 && (
+                  {!currentPreview.chargeable && currentPreview.issues.length > 0 && (
                     <ul className="md-body-medium mt-3 space-y-1 text-error" role="alert">
-                      {preview.issues.map((issue) => (
+                      {currentPreview.issues.map((issue) => (
                         <li key={issue}>{issue}</li>
                       ))}
                     </ul>
@@ -703,14 +751,14 @@ export function EventPage() {
               </div>
 
               <div className="mt-6">
-                {preview?.chargeable ? (
+                {currentPreview?.chargeable ? (
                   <Button
                     full
                     onClick={handlePay}
                     busy={working === 'paying'}
                     busyLabel="Securing your spot…"
                   >
-                    Pay {formatMoney(preview.totalCents, event.currency)} with M-Pesa
+                    Pay {formatMoney(currentPreview.totalCents, event.currency)} with M-Pesa
                   </Button>
                 ) : (
                   <Button
