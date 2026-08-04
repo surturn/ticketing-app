@@ -16,6 +16,30 @@ import { Link, useViewTransitionState } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { prefetchEvent, type EventSummary } from '@/lib/api';
 import { formatMoney } from '@/lib/format';
+import { ShareButton } from './ShareButton';
+
+function ClockIcon() {
+  return (
+    <svg viewBox="0 0 20 20" className="size-3.5 shrink-0" fill="none" aria-hidden="true">
+      <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M10 6v4l3 2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function PinIcon() {
+  return (
+    <svg viewBox="0 0 20 20" className="size-3.5 shrink-0" fill="none" aria-hidden="true">
+      <path
+        d="M10 18s6-5 6-9a6 6 0 1 0-12 0c0 4 6 9 6 9Z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <circle cx="10" cy="9" r="2" stroke="currentColor" strokeWidth="1.6" />
+    </svg>
+  );
+}
 
 function posterDate(iso: string, timezone: string) {
   const parts = new Intl.DateTimeFormat('en-KE', {
@@ -154,7 +178,7 @@ export function EventPoster({
               purpose: a translucent chip takes its legibility from whatever
               happens to be behind it, which on unpredictable promoter artwork
               is a guess. This one reads the same over every poster. */}
-          <div className="absolute top-0 left-4 rounded-b-xs bg-surface-container-lowest/92 px-2.5 pt-2 pb-2 text-center">
+          <div className="absolute top-0 left-3 rounded-b-xs bg-surface-container-lowest/92 px-2.5 pt-2 pb-2 text-center">
             <p className="md-data-small leading-none text-primary">{date.weekday}</p>
             <p className="md-title-medium mt-1 leading-none tabular-nums">{date.day}</p>
             <p className="md-data-small mt-0.5 leading-none text-on-surface-variant">
@@ -180,29 +204,59 @@ export function EventPoster({
         {/* Below the artwork, never on top of it — a promoter's poster is
             composed, and typesetting over it damages the thing being sold. */}
         <div className="px-0.5 pt-3">
-          <h3 className="md-title-medium line-clamp-2 text-on-surface transition-colors group-hover:text-primary">
-            {event.name}
-          </h3>
+          {/* The share control sits beside the title rather than over the
+              artwork — the poster is the promoter's work, and the box-office
+              face beneath it is where the interface is already allowed to add
+              its own controls. */}
+          <div className="flex items-start justify-between gap-1">
+            <h3 className="md-title-medium line-clamp-2 min-w-0 text-on-surface transition-colors group-hover:text-primary">
+              {event.name}
+            </h3>
+            <ShareButton
+              url={`${window.location.origin}${to}`}
+              title={event.name}
+              className="-mt-1 -mr-1"
+            />
+          </div>
 
-          <p className="md-data-small mt-1.5 truncate text-on-surface-variant">
-            {date.time}
-            {event.venue && ` · ${event.venue.toUpperCase()}`}
-          </p>
-
-          <p className="md-data-medium mt-2">
-            {soldOut ? (
-              <span className="text-on-surface-variant">Sold out</span>
-            ) : free ? (
-              <span className="font-medium text-tertiary">Free</span>
-            ) : (
-              <>
-                <span className="text-on-surface-variant">From </span>
-                <span className="font-medium text-on-surface">
-                  {formatMoney(event.fromPriceCents!, event.currency)}
-                </span>
-              </>
+          <p className="md-data-small mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-on-surface-variant">
+            <span className="flex items-center gap-1">
+              <ClockIcon />
+              {date.time}
+            </span>
+            {event.venue && (
+              <span className="flex min-w-0 items-center gap-1 truncate">
+                <PinIcon />
+                <span className="truncate">{event.venue.toUpperCase()}</span>
+              </span>
             )}
           </p>
+
+          {/* Price on the left, a button-shaped affordance on the right — the
+              card itself is already the link, so this is the visual promise
+              of "Get tickets" rather than a second, nested destination. */}
+          <div className="mt-2.5 flex items-center justify-between gap-2">
+            <p className="md-data-medium">
+              {soldOut ? (
+                <span className="text-on-surface-variant">Sold out</span>
+              ) : free ? (
+                <span className="font-medium text-tertiary">Free</span>
+              ) : (
+                <>
+                  <span className="text-on-surface-variant">From </span>
+                  <span className="font-medium text-on-surface">
+                    {formatMoney(event.fromPriceCents!, event.currency)}
+                  </span>
+                </>
+              )}
+            </p>
+
+            {!soldOut && (
+              <span className="md-label-medium trimmed inline-flex h-8 shrink-0 items-center border border-primary px-3 text-primary">
+                Get Tickets
+              </span>
+            )}
+          </div>
         </div>
       </Link>
     </motion.div>

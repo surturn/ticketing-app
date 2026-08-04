@@ -562,6 +562,12 @@
    replaced by an organiser at any time — so it is checked against this instead,
    and this is dense enough at the bottom that white type clears 4.5:1 whatever
    is behind it. Bottom-weighted because that is where the type sits.
+
+   Tinted with `--blue-10` rather than plain black: blue is the brand's own
+   accent, and grading the scrim in it is what makes a night photograph read as
+   *this product's* hero rather than any dark overlay on any photo. The tone is
+   dark enough that the alpha stops still deliver the same contrast the plain
+   black version did — this is a colour change, not a contrast one.
    --------------------------------------------------------------------------- */
 @utility hero-scrim {
   position: absolute;
@@ -570,10 +576,10 @@
   background:
     linear-gradient(
       to top,
-      rgb(0 0 0 / 0.82) 0%,
-      rgb(0 0 0 / 0.55) 32%,
-      rgb(0 0 0 / 0.18) 62%,
-      rgb(0 0 0 / 0.35) 100%
+      color-mix(in srgb, var(--blue-10) 82%, transparent) 0%,
+      color-mix(in srgb, var(--blue-10) 55%, transparent) 32%,
+      color-mix(in srgb, var(--blue-10) 18%, transparent) 62%,
+      color-mix(in srgb, var(--blue-10) 35%, transparent) 100%
     );
 }
 

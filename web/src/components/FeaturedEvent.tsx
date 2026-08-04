@@ -13,7 +13,41 @@
 import { useState } from 'react';
 import type { EventSummary } from '@/lib/api';
 import { formatMoney } from '@/lib/format';
+import { CATEGORY_LABELS } from '@/lib/eventImages';
 import { ButtonLink } from './ui';
+import { ShareButton } from './ShareButton';
+
+function CalendarIcon() {
+  return (
+    <svg viewBox="0 0 20 20" className="size-4 shrink-0" fill="none" aria-hidden="true">
+      <rect x="3" y="4.5" width="14" height="12" rx="2" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M3 8.5h14M7 3v3M13 3v3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ClockIcon() {
+  return (
+    <svg viewBox="0 0 20 20" className="size-4 shrink-0" fill="none" aria-hidden="true">
+      <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M10 6v4l3 2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function PinIcon() {
+  return (
+    <svg viewBox="0 0 20 20" className="size-4 shrink-0" fill="none" aria-hidden="true">
+      <path
+        d="M10 18s6-5 6-9a6 6 0 1 0-12 0c0 4 6 9 6 9Z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <circle cx="10" cy="9" r="2" stroke="currentColor" strokeWidth="1.6" />
+    </svg>
+  );
+}
 
 function longDate(iso: string, timezone: string): string {
   return new Intl.DateTimeFormat('en-KE', {
@@ -39,7 +73,13 @@ export function FeaturedEvent({ event }: { event: EventSummary }) {
 
   return (
     <section className="relative mb-(--space-section-sm) overflow-hidden rounded-lg bg-surface-container-lowest md-elevation-1 sm:mb-(--space-section)">
-      <div className="relative grid gap-0 sm:grid-cols-[minmax(0,320px)_1fr]">
+      {/* The second column only exists when there is a poster to put in it —
+          a grid that keeps a 320px track for a child that never renders is
+          how an artwork-less event ends up with its text crushed into a third
+          of the card and the rest of it blank. */}
+      <div
+        className={`relative grid gap-0 ${showArtwork ? 'sm:grid-cols-[minmax(0,320px)_1fr]' : ''}`}
+      >
         {showArtwork && (
           <div className="relative aspect-4/5 w-full overflow-hidden sm:aspect-auto">
             <img
@@ -54,23 +94,33 @@ export function FeaturedEvent({ event }: { event: EventSummary }) {
         )}
 
         <div className="min-w-0 p-6 sm:p-10">
-          <p className="md-eyebrow text-primary">Next up</p>
+          <div className="flex items-start justify-between gap-3">
+            <span className="md-label-small inline-flex rounded-xs bg-primary-container px-2.5 py-1 text-on-primary-container uppercase">
+              {event.category ? CATEGORY_LABELS[event.category] : 'Next up'}
+            </span>
+            <ShareButton
+              url={`${window.location.origin}/events/${event.slug}`}
+              title={event.name}
+              className="-mt-1 -mr-1"
+            />
+          </div>
 
           <h2 className="md-display-small mt-3">{event.name}</h2>
 
-          <div className="md-data-medium mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-on-surface-variant">
-            <span>{longDate(event.startsAt, event.timezone)}</span>
-            <span className="text-on-surface-variant" aria-hidden="true">
-              ·
+          <div className="md-data-medium mt-4 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-on-surface-variant">
+            <span className="flex items-center gap-1.5">
+              <CalendarIcon />
+              {longDate(event.startsAt, event.timezone)}
             </span>
-            <span className="tabular-nums">{time(event.startsAt, event.timezone)}</span>
+            <span className="flex items-center gap-1.5 tabular-nums">
+              <ClockIcon />
+              {time(event.startsAt, event.timezone)}
+            </span>
             {event.venue && (
-              <>
-                <span className="text-on-surface-variant" aria-hidden="true">
-                  ·
-                </span>
+              <span className="flex min-w-0 items-center gap-1.5">
+                <PinIcon />
                 <span className="truncate">{event.venue}</span>
-              </>
+              </span>
             )}
           </div>
 

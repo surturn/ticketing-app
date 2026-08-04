@@ -17,6 +17,7 @@ import { DEFAULT_HERO } from '@/lib/eventImages';
 import { Hero } from './Hero';
 import { SearchField } from './SearchField';
 import { Ticker } from './Ticker';
+import { TrustBar, BUYER_TRUST } from './TrustBar';
 
 export function HomeHero({
   events,
@@ -28,13 +29,13 @@ export function HomeHero({
   onQueryChange: (next: string) => void;
 }) {
   return (
-    <div className="-mx-4 mb-(--space-section-sm) sm:-mx-6 sm:mb-(--space-section)">
+    <div className="-mx-4 -mt-8 sm:-mx-6 sm:-mt-12">
       <Hero src={DEFAULT_HERO} alt="" eager>
         {/* `dvh`, not `vh`: with `vh` the hero is sized against the viewport
             *without* browser chrome, so it overshoots by the height of the
             address bar until the user scrolls and it collapses. */}
         <div className="flex min-h-[68dvh] flex-col justify-end px-4 pt-24 pb-10 sm:px-6 sm:pb-14 lg:min-h-[72dvh]">
-          <div className="mx-auto w-full max-w-6xl">
+          <div className="mx-auto w-full max-w-[1440px]">
             {/* White on the scrim, not a token role. This is the one place type
                 sits over a photograph rather than over a surface, so it cannot
                 take its colour from the theme — the scrim is what guarantees
@@ -57,6 +58,10 @@ export function HomeHero({
               onChange={onQueryChange}
               className="mt-8 max-w-xl"
             />
+
+            <div className="mt-8">
+              <TrustBar items={BUYER_TRUST} variant="hero" />
+            </div>
           </div>
         </div>
       </Hero>

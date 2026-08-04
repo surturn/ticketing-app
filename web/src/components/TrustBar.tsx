@@ -1,14 +1,21 @@
 /**
  * The four reassurances, as a row.
  *
- * Placed directly under a hero on both the homepage and the event page. A buyer
- * about to type an M-Pesa PIN into a site a friend linked them to is asking
- * exactly four questions, and this answers them before they are asked rather
- * than in a footer they will never reach.
+ * A buyer about to type an M-Pesa PIN into a site a friend linked them to is
+ * asking exactly four questions, and this answers them before they are asked
+ * rather than in a footer they will never reach.
  *
  * Scrolls horizontally on a phone rather than wrapping to two cramped rows or
  * dropping to one item per line, which would make a reassurance strip taller
  * than the hero it reassures about.
+ *
+ * Two tones, because it sits on two different backgrounds. `surface` is the
+ * card-on-a-page version used lower on the page and while signed in; `hero`
+ * sits over the masthead photograph itself, so its text is literal white
+ * rather than a theme token — same reason the hero's own headline is — and its
+ * icon badge is a translucent wash rather than a solid container colour, since
+ * a solid tonal fill would fight the photograph behind it instead of sitting
+ * on top of it.
  */
 import type { ReactNode } from 'react';
 
@@ -18,23 +25,49 @@ export interface TrustItem {
   hint: string;
 }
 
-export function TrustBar({ items }: { items: TrustItem[] }) {
+export function TrustBar({
+  items,
+  variant = 'surface',
+}: {
+  items: TrustItem[];
+  variant?: 'surface' | 'hero';
+}) {
+  const onHero = variant === 'hero';
+
   return (
-    <ul className="-mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-4 sm:overflow-visible sm:px-0 lg:grid-cols-4 [&::-webkit-scrollbar]:hidden">
+    <ul
+      className={`-mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] sm:mx-0 sm:gap-6 sm:overflow-visible sm:px-0 [&::-webkit-scrollbar]:hidden ${
+        onHero ? 'sm:flex-wrap' : 'sm:grid sm:grid-cols-2 lg:grid-cols-4'
+      }`}
+    >
       {items.map((item) => (
         <li
           key={item.label}
-          className="flex w-56 shrink-0 snap-start items-center gap-3 rounded-md bg-surface-container-low p-4 sm:w-auto"
+          className={
+            onHero
+              ? 'flex w-56 shrink-0 snap-start items-center gap-2.5 sm:w-auto'
+              : 'flex w-56 shrink-0 snap-start items-center gap-3 rounded-md bg-surface-container-low p-4 sm:w-auto'
+          }
         >
           <span
-            className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary-container text-on-primary-container"
+            className={`flex size-9 shrink-0 items-center justify-center rounded-full ${
+              onHero
+                ? 'bg-[var(--blue-60)] text-white'
+                : 'bg-primary-container text-on-primary-container'
+            }`}
             aria-hidden="true"
           >
             {item.icon}
           </span>
           <span className="min-w-0">
-            <span className="md-title-small block truncate text-on-surface">{item.label}</span>
-            <span className="md-body-small block truncate text-on-surface-variant">
+            <span
+              className={`md-title-small block truncate ${onHero ? 'text-white' : 'text-on-surface'}`}
+            >
+              {item.label}
+            </span>
+            <span
+              className={`md-body-small block truncate ${onHero ? 'text-white/70' : 'text-on-surface-variant'}`}
+            >
               {item.hint}
             </span>
           </span>

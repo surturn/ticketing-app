@@ -18,6 +18,7 @@ import {
 } from '@/lib/api';
 import { Accordion } from '@/components/Accordion';
 import { EventHero } from '@/components/EventHero';
+import { EventTrustStrip } from '@/components/EventTrustStrip';
 import { EventRail } from '@/components/EventRail';
 import { HowItWorks } from '@/components/HowItWorks';
 import { LocalErrorBoundary } from '@/components/LocalErrorBoundary';
@@ -412,7 +413,9 @@ export function EventPage() {
         onPosterError={() => setPosterFailed(true)}
       />
 
-      <div className="grid gap-10 pt-16 lg:grid-cols-[1fr_380px] lg:items-start">
+      <EventTrustStrip event={event} />
+
+      <div className="grid gap-10 pt-8 lg:grid-cols-[1fr_380px] lg:items-start">
       <div>
         {/* The description, re-homed above the tiers now that the header it
             used to live inside is gone — and, on phones, the poster's home
@@ -444,7 +447,7 @@ export function EventPage() {
           </div>
         )}
 
-        <h2 className="md-eyebrow mb-5 text-on-surface-variant">Tickets</h2>
+        <h2 className="md-title-large mb-5">Choose your tickets</h2>
 
         <div className="space-y-3">
           {event.tiers.map((tier) => (
@@ -567,7 +570,7 @@ export function EventPage() {
           {/* The tear line, and the only one on this viewport. */}
           <div className="stub-edge -mx-5 -mt-5 mb-5" aria-hidden="true" />
 
-          <h2 className="md-title-large">Your order</h2>
+          <h2 className="md-title-large">Order summary</h2>
 
           {ticketCount === 0 ? (
             <p className="md-body-medium mt-3 text-on-surface-variant">
@@ -754,6 +757,7 @@ export function EventPage() {
                 {currentPreview?.chargeable ? (
                   <Button
                     full
+                    icon={<LockIcon />}
                     onClick={handlePay}
                     busy={working === 'paying'}
                     busyLabel="Securing your spot…"
@@ -763,6 +767,7 @@ export function EventPage() {
                 ) : (
                   <Button
                     full
+                    icon={<LockIcon />}
                     onClick={handleReview}
                     disabled={!detailsComplete}
                     busy={working === 'preview'}
@@ -837,6 +842,15 @@ export function EventPage() {
         </div>
       )}
     </div>
+  );
+}
+
+function LockIcon() {
+  return (
+    <svg viewBox="0 0 20 20" className="size-4.5" fill="none" aria-hidden="true">
+      <rect x="4" y="9" width="12" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M6.5 9V6.5a3.5 3.5 0 0 1 7 0V9" stroke="currentColor" strokeWidth="1.6" />
+    </svg>
   );
 }
 
