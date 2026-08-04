@@ -112,6 +112,8 @@ export interface AdminEvent {
   description: string | null;
   venue: string | null;
   posterUrl: string | null;
+  heroUrl?: string;
+  category?: string;
   timezone: string;
   currency: string;
   startsAt: string;
@@ -169,6 +171,8 @@ export interface EventInput {
   description?: string;
   venue?: string;
   posterUrl?: string;
+  heroUrl?: string;
+  category?: string;
   timezone: string;
   currency: string;
   startsAt: string;
@@ -215,13 +219,16 @@ export const ACCEPTED_POSTER_TYPES = ['image/png', 'image/jpeg', 'image/webp'] a
 export const MAX_POSTER_BYTES = 2 * 1024 * 1024;
 
 /**
- * Uploads a poster and returns its public URL.
+ * Uploads an image to the admin endpoint for its kind.
  *
- * Not routed through `adminFetch`: that sets a JSON content type and stringifies
- * the body, and a multipart request must be left alone so the browser can set
- * its own boundary. The key handling is the same.
+ * The two endpoints differ only in path and response key; the credential
+ * handling, the network-failure translation and the 401 behaviour are identical
+ * and are worth having in one place.
  */
-export async function uploadPoster(file: File): Promise<{ url: string }> {
+async function uploadImage(
+  file: File,
+  kind: 'poster' | 'hero',
+): Promise<{ url: string }> {
   const key = getAdminKey();
   if (!key) throw new ApiError(401, 'not_signed_in', 'Sign in to continue.');
 
@@ -230,7 +237,7 @@ export async function uploadPoster(file: File): Promise<{ url: string }> {
 
   let response: Response;
   try {
-    response = await fetch('/api/admin/uploads/poster', {
+    response = await fetch(`/api/admin/uploads/${kind}`, {
       method: 'POST',
       headers: { 'x-api-key': key },
       body: form,
@@ -251,7 +258,15 @@ export async function uploadPoster(file: File): Promise<{ url: string }> {
     );
   }
 
-  return { url: (payload as { poster: { url: string } }).poster.url };
+  return { url: (payload as Record<'poster' | 'hero', { url: string }>)[kind].url };
+}
+
+export function uploadPoster(file: File): Promise<{ url: string }> {
+  return uploadImage(file, 'poster');
+}
+
+export function uploadHero(file: File): Promise<{ url: string }> {
+  return uploadImage(file, 'hero');
 }
 
 export const getStats = (eventId: string) =>
