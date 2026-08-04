@@ -17,10 +17,15 @@ import { WhatsAppButton, WHATSAPP_DISPLAY } from '@/components/WhatsAppButton';
 export function HostPage() {
   return (
     <div>
-      <section className="mb-12">
+      {/* Consistency sweep: this page has no photo behind its heading, unlike
+          the homepage and event-page heroes that earned the larger display
+          sizes — it is a plain page title, so it takes the scale the rest of
+          the app's plain titles use rather than borrowing a photo hero's
+          weight it never had. */}
+      <section className="mb-(--space-section-sm) sm:mb-(--space-section)">
         <p className="md-eyebrow text-tertiary">For organisers · Nairobi</p>
 
-        <h1 className="md-display-medium mt-3 max-w-3xl">
+        <h1 className="md-display-small mt-3 max-w-3xl">
           Sell out your next event
         </h1>
 

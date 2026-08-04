@@ -61,7 +61,7 @@ function Control({ example, children }: { example: ReactNode; children: ReactNod
 export function HelpPage() {
   return (
     <div className="mx-auto max-w-2xl">
-      <header className="mb-10">
+      <header className="mb-(--space-section-sm) sm:mb-(--space-section)">
         <h1 className="md-headline-large">Help</h1>
         <p className="md-body-large mt-4 text-on-surface-variant">
           Most things are on this page. If yours is not, email{' '}
@@ -74,7 +74,7 @@ export function HelpPage() {
 
       {/* The single most common reason anyone opens a help page, so it is
           first rather than buried under an introduction. */}
-      <Card className="mb-10 p-6">
+      <Card className="mb-(--space-section-sm) p-6 sm:mb-(--space-section)">
         <h2 className="md-title-large">My ticket has not arrived</h2>
         <p className="md-body-medium mt-3 text-on-surface-variant">
           Check the spam or promotions folder first — that is where it is
@@ -107,7 +107,12 @@ export function HelpPage() {
         </div>
       </Card>
 
-      <div className="space-y-10">
+      {/* The trailing gap before "Still stuck" used to live as `mt-12` on that
+          card instead of here. Moved so the section boundary is expressed the
+          same way as every other one on this page (and elsewhere) — a
+          margin-bottom on the block being separated from, using the shared
+          rhythm token rather than a locally guessed number. */}
+      <div className="mb-(--space-section-sm) space-y-10 sm:mb-(--space-section)">
         <Topic id="buying" title="Buying a ticket">
           <p>
             Open the event, choose how many of each ticket type you want, then
@@ -279,7 +284,7 @@ export function HelpPage() {
         </Topic>
       </div>
 
-      <Card className="mt-12 p-6">
+      <Card className="p-6">
         <h2 className="md-title-large">Still stuck</h2>
         <p className="md-body-medium mt-3 text-on-surface-variant">
           The quickest way to reach us is WhatsApp — {WHATSAPP_DISPLAY}. Email{' '}
