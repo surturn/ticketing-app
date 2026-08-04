@@ -298,6 +298,14 @@
   --space-7: 48px;
   --space-8: 64px;
 
+  /* Section rhythm, from §Grid of the UI rules: 96px between sections on
+     desktop, tighter on a phone where 96px of nothing is a scroll rather than
+     a breath. These exist because the spacing was previously chosen per page
+     — mb-10 here, mb-14 there — which is what made the page read as a stack of
+     unrelated modules rather than one document. */
+  --space-section: 96px;
+  --space-section-sm: 64px;
+
   --dur-short: 150ms;
   --dur-medium: 250ms;
   --dur-long: 400ms;
@@ -544,6 +552,44 @@
 :root[data-theme='dark'] .md-elevation-2,
 :root[data-theme='dark'] .md-elevation-3 {
   box-shadow: none;
+}
+
+/* ---------------------------------------------------------------------------
+   Photography.
+
+   The scrim is the contrast guarantee. Type over a photograph cannot be
+   checked against the photograph — a hero image is unpredictable and may be
+   replaced by an organiser at any time — so it is checked against this instead,
+   and this is dense enough at the bottom that white type clears 4.5:1 whatever
+   is behind it. Bottom-weighted because that is where the type sits.
+
+   Tinted with `--blue-10` rather than plain black: blue is the brand's own
+   accent, and grading the scrim in it is what makes a night photograph read as
+   *this product's* hero rather than any dark overlay on any photo. The tone is
+   dark enough that the alpha stops still deliver the same contrast the plain
+   black version did — this is a colour change, not a contrast one.
+   --------------------------------------------------------------------------- */
+@utility hero-scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      to top,
+      color-mix(in srgb, var(--blue-10) 82%, transparent) 0%,
+      color-mix(in srgb, var(--blue-10) 55%, transparent) 32%,
+      color-mix(in srgb, var(--blue-10) 18%, transparent) 62%,
+      color-mix(in srgb, var(--blue-10) 35%, transparent) 100%
+    );
+}
+
+/* The floating poster sits over photography, not over a surface, so the
+   container-step half of `md-elevation-*` has nothing to step against. This is
+   the shadow half alone, at a depth that reads as resting above the image. */
+@utility md-elevation-float {
+  box-shadow:
+    0 12px 32px rgb(0 0 0 / 0.28),
+    0 2px 8px rgb(0 0 0 / 0.16);
 }
 
 /* ---------------------------------------------------------------------------

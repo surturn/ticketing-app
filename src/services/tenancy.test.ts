@@ -1,3 +1,4 @@
+import { eq } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { closeDatabase, db } from '../db/client.js';
 import {
@@ -16,6 +17,7 @@ import {
   loadScopedEvent,
   organisationForNewEvent,
   scopeForUser,
+  verifyOrganisation,
   type AdminScope,
 } from './tenancy.service.js';
 
@@ -177,6 +179,46 @@ describe.skipIf(!enabled)('tenancy', () => {
       await expect(organisationForNewEvent(asPlatform)).rejects.toThrow(
         /default organisation/i,
       );
+    });
+  });
+
+  describe('verifying an organiser', () => {
+    it('refuses an organisation-scoped caller, even against its own organisation', async () => {
+      // The specific hole this closes: an organiser must not be able to vet
+      // itself by passing its own id.
+      await expect(verifyOrganisation(asOrg(orgA), orgA, true)).rejects.toMatchObject({
+        statusCode: 403,
+      });
+    });
+
+    it("refuses an organisation-scoped caller against another organisation too", async () => {
+      await expect(verifyOrganisation(asOrg(orgA), orgB, true)).rejects.toMatchObject({
+        statusCode: 403,
+      });
+    });
+
+    it('lets the platform verify an organisation', async () => {
+      const result = await verifyOrganisation(asPlatform, orgA, true);
+      expect(result).toEqual({ id: orgA, verified: true });
+
+      const [row] = await db
+        .select()
+        .from(organisations)
+        .where(eq(organisations.id, orgA));
+      expect(row?.verifiedAt).not.toBeNull();
+    });
+
+    it('lets the platform withdraw verification, clearing verified_at back to null', async () => {
+      await verifyOrganisation(asPlatform, orgA, true);
+
+      const result = await verifyOrganisation(asPlatform, orgA, false);
+      expect(result).toEqual({ id: orgA, verified: false });
+
+      const [row] = await db
+        .select()
+        .from(organisations)
+        .where(eq(organisations.id, orgA));
+      expect(row?.verifiedAt).toBeNull();
     });
   });
 });

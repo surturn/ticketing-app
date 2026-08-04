@@ -17,10 +17,18 @@ import { WhatsAppButton, WHATSAPP_DISPLAY } from '@/components/WhatsAppButton';
 export function HostPage() {
   return (
     <div>
-      <section className="mb-12">
+      {/* Consistency sweep: every plain page title in this app — the account
+          welcome, the sign-in panel, Help, Settings, the legal pages, the
+          signed-in greeting — sits at md-headline-large. The previous
+          md-display-medium here was borrowed from EventHero, which earns
+          that extra weight because its title sits over a photograph and has
+          to hold its own against the image behind it. This page's title sits
+          on a plain surface with nothing to compete with, so it takes the
+          same size every other plain title in the app uses. */}
+      <section className="mb-(--space-section-sm) sm:mb-(--space-section)">
         <p className="md-eyebrow text-tertiary">For organisers · Nairobi</p>
 
-        <h1 className="md-display-medium mt-3 max-w-3xl">
+        <h1 className="md-headline-large mt-3 max-w-3xl">
           Sell out your next event
         </h1>
 

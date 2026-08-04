@@ -17,25 +17,26 @@
  * React state lives in `AuthProvider`; this module is deliberately plain
  * functions so the flows can be reasoned about — and later tested — without a
  * renderer.
+ *
+ * `firebase/auth` is imported dynamically inside each function below rather
+ * than once at the top of the file. Every export here only runs on a deliberate
+ * user action — clicking "sign in with Google", submitting a password form —
+ * so the extra `import()` latency is invisible, buried inside a click a person
+ * already expects to take a moment. A static import would cost every visitor
+ * that latency for nothing: this module is reached from the sign-in route,
+ * which is already code-split, but a top-level static import of `firebase/auth`
+ * still pulls the SDK into the shared chunk every page loads, because bundlers
+ * hoist a statically-imported module's own static imports regardless of how
+ * deep the importing module sits in the lazy graph.
  */
-import {
+import type {
+  AuthProvider as FirebaseAuthProvider,
   GoogleAuthProvider,
   OAuthProvider,
-  createUserWithEmailAndPassword,
-  getAdditionalUserInfo,
-  getRedirectResult,
-  sendEmailVerification,
-  sendPasswordResetEmail,
-  signInWithEmailAndPassword,
-  signInWithPopup,
-  signInWithRedirect,
-  signOut,
-  updateProfile,
-  type AuthProvider as FirebaseAuthProvider,
-  type User,
-  type UserCredential,
+  User,
+  UserCredential,
 } from 'firebase/auth';
-import { firebaseAuth } from './firebase';
+import { getFirebaseAuth } from './firebase';
 
 export type ProviderId = 'google.com' | 'apple.com';
 
@@ -47,7 +48,8 @@ export interface SignInOutcome {
 
 // ─── Federated providers ───────────────────────────────────────────────────
 
-function googleProvider(): GoogleAuthProvider {
+async function googleProvider(): Promise<GoogleAuthProvider> {
+  const { GoogleAuthProvider } = await import('firebase/auth');
   const provider = new GoogleAuthProvider();
   // Always show the chooser. Without it a shared machine silently reuses
   // whichever Google account signed in last, which at a ticket desk or on a
@@ -56,7 +58,8 @@ function googleProvider(): GoogleAuthProvider {
   return provider;
 }
 
-function appleProvider(): OAuthProvider {
+async function appleProvider(): Promise<OAuthProvider> {
+  const { OAuthProvider } = await import('firebase/auth');
   const provider = new OAuthProvider('apple.com');
   // Apple returns neither unless asked. `email` is required — the API refuses a
   // token with no email, since receipts, ticket delivery and order lookup are
@@ -66,7 +69,7 @@ function appleProvider(): OAuthProvider {
   return provider;
 }
 
-function providerFor(id: ProviderId): FirebaseAuthProvider {
+function providerFor(id: ProviderId): Promise<FirebaseAuthProvider> {
   return id === 'google.com' ? googleProvider() : appleProvider();
 }
 
@@ -82,18 +85,22 @@ function providerFor(id: ProviderId): FirebaseAuthProvider {
  * when the browser refuses to open a popup at all.
  */
 export async function signInWithProvider(id: ProviderId): Promise<SignInOutcome> {
-  const auth = firebaseAuth();
+  const [auth, { signInWithPopup, signInWithRedirect }] = await Promise.all([
+    getFirebaseAuth(),
+    import('firebase/auth'),
+  ]);
 
   try {
-    const credential = await signInWithPopup(auth, providerFor(id));
+    const credential = await signInWithPopup(auth, await providerFor(id));
     return outcomeOf(credential, id);
   } catch (error) {
     const code = errorCode(error);
 
     if (code === 'auth/popup-blocked' || code === 'auth/operation-not-supported-in-this-environment') {
       // Navigates away. `completeRedirectSignIn` picks the result up on return,
-      // so nothing after this line runs.
-      await signInWithRedirect(auth, providerFor(id));
+      // so nothing after this line runs. A fresh provider instance, same as the
+      // popup attempt above used its own — neither call reuses the other's.
+      await signInWithRedirect(auth, await providerFor(id));
       return await new Promise<never>(() => {});
     }
 
@@ -110,7 +117,11 @@ export async function signInWithProvider(id: ProviderId): Promise<SignInOutcome>
  * no explanation for why they are still signed out.
  */
 export async function completeRedirectSignIn(): Promise<SignInOutcome | null> {
-  const credential = await getRedirectResult(firebaseAuth());
+  const [auth, { getRedirectResult }] = await Promise.all([
+    getFirebaseAuth(),
+    import('firebase/auth'),
+  ]);
+  const credential = await getRedirectResult(auth);
   if (!credential) return null;
 
   const id = credential.providerId;
@@ -131,6 +142,7 @@ async function outcomeOf(
   credential: UserCredential,
   id?: ProviderId,
 ): Promise<SignInOutcome> {
+  const { getAdditionalUserInfo, updateProfile } = await import('firebase/auth');
   const isNewUser = getAdditionalUserInfo(credential)?.isNewUser ?? false;
 
   if (id === 'apple.com' && isNewUser && !credential.user.displayName) {
@@ -161,11 +173,10 @@ export async function signUpWithPassword(
   password: string,
   displayName?: string,
 ): Promise<SignInOutcome> {
-  const credential = await createUserWithEmailAndPassword(
-    firebaseAuth(),
-    email.trim(),
-    password,
-  );
+  const [auth, { createUserWithEmailAndPassword, updateProfile, sendEmailVerification }] =
+    await Promise.all([getFirebaseAuth(), import('firebase/auth')]);
+
+  const credential = await createUserWithEmailAndPassword(auth, email.trim(), password);
 
   const name = displayName?.trim();
   if (name) {
@@ -184,27 +195,36 @@ export async function signInWithPassword(
   email: string,
   password: string,
 ): Promise<SignInOutcome> {
-  const credential = await signInWithEmailAndPassword(
-    firebaseAuth(),
-    email.trim(),
-    password,
-  );
+  const [auth, { signInWithEmailAndPassword }] = await Promise.all([
+    getFirebaseAuth(),
+    import('firebase/auth'),
+  ]);
+  const credential = await signInWithEmailAndPassword(auth, email.trim(), password);
   return { user: credential.user, isNewUser: false };
 }
 
 export async function sendPasswordReset(email: string): Promise<void> {
-  await sendPasswordResetEmail(firebaseAuth(), email.trim());
+  const [auth, { sendPasswordResetEmail }] = await Promise.all([
+    getFirebaseAuth(),
+    import('firebase/auth'),
+  ]);
+  await sendPasswordResetEmail(auth, email.trim());
 }
 
 /** Re-sends the verification mail for the signed-in buyer. */
 export async function resendVerificationEmail(): Promise<void> {
-  const user = firebaseAuth().currentUser;
+  const [auth, { sendEmailVerification }] = await Promise.all([
+    getFirebaseAuth(),
+    import('firebase/auth'),
+  ]);
+  const user = auth.currentUser;
   if (!user) throw new Error('Sign in first.');
   await sendEmailVerification(user);
 }
 
 export async function signOutOfApp(): Promise<void> {
-  await signOut(firebaseAuth());
+  const [auth, { signOut }] = await Promise.all([getFirebaseAuth(), import('firebase/auth')]);
+  await signOut(auth);
 }
 
 // ─── Errors ────────────────────────────────────────────────────────────────
