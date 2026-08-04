@@ -3,12 +3,12 @@ import { eq } from 'drizzle-orm';
 import { env } from '../../config/env.js';
 import { db } from '../../db/client.js';
 import { events } from '../../db/schema.js';
-import { sendEmail } from '../../lib/email.js';
+import { sendEmail, type EmailAttachment } from '../../lib/email.js';
 import { renderEmail, type DetailRow, type EmailLayout } from '../../lib/email-template.js';
 import { AppError } from '../../lib/errors.js';
 import { formatMoney } from '../../lib/money.js';
 import { logger } from '../../lib/logger.js';
-import { qrDataUrl } from '../../lib/qr.js';
+import { qrPngBase64 } from '../../lib/qr.js';
 import { createQueueClient } from '../../lib/redis.js';
 import { getOrderByReference, getOrderById } from '../../services/orders.service.js';
 import { welcomeContent } from '../../services/users.service.js';
@@ -32,6 +32,9 @@ interface Delivery {
   body: string;
   /** The structured version, rendered into the HTML shell. */
   layout?: EmailLayout;
+  /** CID images `layout.tickets` references. Empty for everything but a
+      tickets-issued email. */
+  attachments?: EmailAttachment[];
 }
 
 async function deliver(delivery: Delivery): Promise<{ sent: boolean }> {
@@ -43,6 +46,7 @@ async function deliver(delivery: Delivery): Promise<{ sent: boolean }> {
     // text version is also one of the signals a spam filter weighs — an
     // HTML-only message scores worse than a properly paired one.
     ...(delivery.layout ? { html: renderEmail(delivery.layout) } : {}),
+    ...(delivery.attachments?.length ? { attachments: delivery.attachments } : {}),
   });
 
   return { sent: result.sent };
@@ -257,14 +261,18 @@ async function build(job: NotificationJob): Promise<Delivery | null> {
       // Every ticket gets a scannable QR in the email itself — the gate needs
       // it and a guest checkout, which is the default, never signs in to see
       // the one on the order page. `ticket.qr` is populated because `order`
-      // was fetched with `trusted: true` above.
-      const ticketQrs = await Promise.all(
+      // was fetched with `trusted: true` above. Rendered as CID attachments
+      // rather than `data:` URIs — see qr.ts for why.
+      const ticketAttachments = await Promise.all(
         order.tickets.map(async (ticket) => ({
+          cid: `ticket-${ticket.id}.png`,
           label: ticket.tierName,
           code: ticket.code!,
-          dataUrl: await qrDataUrl(ticket.qr!),
+          content: await qrPngBase64(ticket.qr!),
         })),
       );
+      const ticketQrs = ticketAttachments.map(({ cid, label, code }) => ({ label, code, cid }));
+      const attachments = ticketAttachments.map(({ cid, content }) => ({ name: cid, content }));
 
       return {
         to,
@@ -302,6 +310,7 @@ async function build(job: NotificationJob): Promise<Delivery | null> {
             ? { action: { label: one ? 'View my ticket' : 'View my tickets', url: orderUrl(order)! } }
             : {}),
         },
+        attachments,
       };
     }
 
