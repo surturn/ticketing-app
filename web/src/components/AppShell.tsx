@@ -17,10 +17,6 @@ function Wordmark() {
   return (
     <Link
       to="/"
-      /* `shrink-0`, and no `overflow-hidden`. Letting it shrink is what produced
-         "Eventify Tic" on a phone — a logotype sliced through a word looks more
-         broken than anything it was making room for. It now keeps its width and
-         the second word is dropped wholesale below `sm` instead. */
       className="group inline-flex shrink-0 items-center gap-2 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary sm:gap-2.5"
       aria-label="Eventify Tickets — home"
     >
@@ -51,12 +47,12 @@ function Wordmark() {
         <circle cx="16" cy="21" r="1.6" style={{ fill: 'var(--blue-10)' }} opacity="0.85" />
       </svg>
 
-      {/* Never wraps and never truncates. Below `sm` the second word is hidden
-          outright rather than sliced — "Eventify" alone is a wordmark, whereas
-          "Eventify Tic" is a rendering bug. */}
+      {/* Full label at every width. It used to drop "Tickets" below `sm` because
+          four inline controls plus a wordmark had nowhere else to give up the
+          room — now that those controls collapse into a menu on a phone, the
+          wordmark can stay whole instead of standing in for the brand. */}
       <span className="font-display text-base leading-none font-extrabold tracking-tight whitespace-nowrap text-on-surface sm:text-lg">
-        Eventify
-        <span className="hidden text-primary sm:inline"> Tickets</span>
+        Eventify<span className="text-primary"> Tickets</span>
       </span>
     </Link>
   );

@@ -45,9 +45,17 @@ export interface OrderView {
  *
  * `null` for a guest, or for anyone holding only the reference — which is most
  * callers, and legitimately so.
+ *
+ * `trusted` is the one way around the redaction below, and it is not for a
+ * viewer at all — it is for the system itself building the ticket-issued
+ * email, which goes to `order.buyerEmail` and nowhere else. The risk the
+ * redaction defends against is a forwarded *link*, something anyone who sees
+ * it can open; a message already sitting in the buyer's inbox was never
+ * that. No HTTP route may set this.
  */
 export interface OrderViewer {
   uid: string | null;
+  trusted?: boolean;
 }
 
 async function buildView(order: Order, viewer: OrderViewer): Promise<OrderView> {
@@ -100,7 +108,7 @@ async function buildView(order: Order, viewer: OrderViewer): Promise<OrderView> 
    * turns a link that anyone could forward into a credential only its owner can
    * use, and it is the reason the account exists at all.
    */
-  const ownsOrder = viewer.uid !== null && order.userId === viewer.uid;
+  const ownsOrder = viewer.trusted === true || (viewer.uid !== null && order.userId === viewer.uid);
 
   const visibleTickets = ownsOrder
     ? issued

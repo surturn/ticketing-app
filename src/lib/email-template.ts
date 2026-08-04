@@ -41,6 +41,14 @@ export interface DetailRow {
   value: string;
 }
 
+/** One scannable ticket: a QR image with its tier and code underneath. */
+export interface TicketQr {
+  label: string;
+  code: string;
+  /** A `data:` URI PNG — inline, so no image request the client can block. */
+  dataUrl: string;
+}
+
 export interface EmailLayout {
   /** The one-line headline, shown large at the top of the card. */
   heading: string;
@@ -48,6 +56,8 @@ export interface EmailLayout {
   intro: string[];
   /** The labelled facts: event, order, amount. */
   details?: DetailRow[];
+  /** Scannable QR codes, one per ticket, shown as images. */
+  tickets?: TicketQr[];
   /** An optional section heading and body after the details. */
   section?: { title: string; body: string[] };
   /** The single call to action. */
@@ -74,6 +84,36 @@ function detailTable(rows: DetailRow[]): string {
         <table role="presentation" cellpadding="0" cellspacing="0" border="0">${cells}</table>
       </td></tr>
     </table>`;
+}
+
+/**
+ * The QR block: one image per ticket, tier and code underneath.
+ *
+ * A table per ticket, not a grid — the same Outlook constraint as the button
+ * below. The image is a `data:` URI, embedded rather than linked, because a
+ * remote image is exactly what a mail client blocks until someone clicks
+ * "show images," and a ticket nobody can see at the gate is worse than a
+ * slightly heavier email.
+ */
+function ticketBlock(tickets: TicketQr[]): string {
+  const cards = tickets
+    .map(
+      ({ label, code, dataUrl }) => `
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"
+               style="background:${CANVAS};border-radius:4px;margin:0 0 12px">
+          <tr>
+            <td align="center" style="padding:20px">
+              <img src="${dataUrl}" width="200" height="200" alt="QR code for ${esc(label)} ${esc(code)}"
+                   style="display:block;width:200px;height:200px;border:0;background:${PAPER};border-radius:4px">
+              <p style="margin:14px 0 0;font-size:13px;color:${MUTED}">${esc(label)}</p>
+              <p style="margin:2px 0 0;font-size:15px;font-weight:600;letter-spacing:0.04em;color:${INK}">${esc(code)}</p>
+            </td>
+          </tr>
+        </table>`,
+    )
+    .join('');
+
+  return `<div style="margin:24px 0">${cards}</div>`;
 }
 
 /**
@@ -166,6 +206,7 @@ export function renderEmail(layout: EmailLayout): string {
               </h1>
               ${intro}
               ${layout.details?.length ? detailTable(layout.details) : ''}
+              ${layout.tickets?.length ? ticketBlock(layout.tickets) : ''}
               ${section}
               ${layout.action ? actionButton(layout.action.label, layout.action.url) : ''}
             </td>

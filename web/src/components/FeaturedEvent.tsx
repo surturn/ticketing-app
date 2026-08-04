@@ -15,7 +15,7 @@ import type { EventSummary } from '@/lib/api';
 import { formatMoney } from '@/lib/format';
 import { CATEGORY_LABELS } from '@/lib/eventImages';
 import { ButtonLink } from './ui';
-import { ShareButton } from './ShareButton';
+import { ShareButton } from './ShareSheet';
 
 function CalendarIcon() {
   return (
@@ -98,11 +98,7 @@ export function FeaturedEvent({ event }: { event: EventSummary }) {
             <span className="md-label-small inline-flex rounded-xs bg-primary-container px-2.5 py-1 text-on-primary-container uppercase">
               {event.category ? CATEGORY_LABELS[event.category] : 'Next up'}
             </span>
-            <ShareButton
-              url={`${window.location.origin}/events/${event.slug}`}
-              title={event.name}
-              className="-mt-1 -mr-1"
-            />
+            <ShareButton event={event} className="-mt-1 -mr-1 size-8 shrink-0" />
           </div>
 
           <h2 className="md-display-small mt-3">{event.name}</h2>

@@ -16,7 +16,7 @@ import { Link, useViewTransitionState } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { prefetchEvent, type EventSummary } from '@/lib/api';
 import { formatMoney } from '@/lib/format';
-import { ShareButton } from './ShareButton';
+import { ShareButton } from './ShareSheet';
 
 function ClockIcon() {
   return (
@@ -212,11 +212,7 @@ export function EventPoster({
             <h3 className="md-title-medium line-clamp-2 min-w-0 text-on-surface transition-colors group-hover:text-primary">
               {event.name}
             </h3>
-            <ShareButton
-              url={`${window.location.origin}${to}`}
-              title={event.name}
-              className="-mt-1 -mr-1"
-            />
+            <ShareButton event={event} className="-mt-1 -mr-1 size-8 shrink-0" />
           </div>
 
           <p className="md-data-small mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-on-surface-variant">
