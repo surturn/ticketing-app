@@ -5,7 +5,7 @@
  * every request here is a bare `/api/...` with no base URL to configure and no
  * CORS in the buyer's path.
  */
-import { firebaseAuth } from './firebase';
+import { getFirebaseAuth } from './firebase';
 
 /** The API's error envelope: `{ error: { code, message, details?, retryable } }`. */
 export class ApiError extends Error {
@@ -87,20 +87,35 @@ export async function apiFetch<T>(
   const finalHeaders = new Headers(headers);
 
   if (optionalAuth && !auth) {
-    const user = firebaseAuth().currentUser;
-    if (user) {
-      // Deliberately swallowed. A token that could not be refreshed must not
-      // stop a buyer reading their order — they simply see the guest view.
-      try {
+    // Inside the branch, not hoisted above it: a guest request — the common
+    // case for events, checkout, an order opened from a shared link — must
+    // never touch Firebase at all. Awaiting `getFirebaseAuth()` unconditionally
+    // here would load the SDK for every request regardless of whether anyone
+    // is signed in, which is exactly the download this branch exists to avoid.
+    //
+    // The whole thing — the load and the token fetch — sits inside one
+    // try/catch now, not just the token fetch. `getFirebaseAuth()` can reject:
+    // a chunk 404 from a tab left open across a deploy, or any other transient
+    // network failure fetching the SDK. This is `optionalAuth`, so that must
+    // degrade exactly like a failed `getIdToken()` already does — the request
+    // proceeds unauthenticated — rather than throwing out of a call that has
+    // no business requiring Firebase to have loaded at all. That distinction
+    // matters most on the order page: it is reached by `fetchOrder`, the page
+    // a buyer opens at the gate to show their ticket, and a Firebase hiccup
+    // must not be able to break that for someone who was never signed in to
+    // begin with.
+    try {
+      const user = (await getFirebaseAuth()).currentUser;
+      if (user) {
         finalHeaders.set('Authorization', `Bearer ${await user.getIdToken()}`);
-      } catch {
-        /* proceed unauthenticated */
       }
+    } catch {
+      /* proceed unauthenticated */
     }
   }
 
   if (auth) {
-    const user = firebaseAuth().currentUser;
+    const user = (await getFirebaseAuth()).currentUser;
     if (!user) throw new ApiError(401, 'not_signed_in', 'Sign in to continue.');
 
     // Not cached. `getIdToken` returns the current token and refreshes it only
