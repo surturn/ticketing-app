@@ -22,6 +22,18 @@ import { logger } from './logger.js';
 const BREVO_ENDPOINT = 'https://api.brevo.com/v3/smtp/email';
 const REQUEST_TIMEOUT_MS = 15_000;
 
+/**
+ * A CID attachment — a real MIME part, referenced from the HTML body as
+ * `cid:<name>` rather than requested separately or inlined as a `data:` URI.
+ * `name` doubles as the Content-ID Brevo assigns it, so the two must match
+ * exactly.
+ */
+export interface EmailAttachment {
+  name: string;
+  /** Base64-encoded bytes. */
+  content: string;
+}
+
 export interface EmailMessage {
   to: string;
   toName?: string | null;
@@ -29,6 +41,9 @@ export interface EmailMessage {
   /** Plain-text body. Converted to minimal HTML for clients that demand it. */
   text: string;
   html?: string;
+  /** Embedded inline via `cid:` references in `html` — never shown as a
+      separate, downloadable attachment. */
+  attachments?: EmailAttachment[];
 }
 
 export interface EmailResult {
@@ -85,6 +100,13 @@ export async function sendEmail(message: EmailMessage): Promise<EmailResult> {
         subject: message.subject,
         textContent: message.text,
         htmlContent: message.html ?? textToHtml(message.text),
+        // Brevo embeds an attachment inline, in place of any `cid:<name>`
+        // reference in `htmlContent`, whenever that reference matches this
+        // `name` exactly — this is the field, and the only field, that makes
+        // that matching happen.
+        ...(message.attachments?.length
+          ? { attachment: message.attachments.map((a) => ({ name: a.name, content: a.content })) }
+          : {}),
       }),
       signal: controller.signal,
     });

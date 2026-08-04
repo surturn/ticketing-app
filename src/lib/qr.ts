@@ -3,18 +3,22 @@ import QRCode from 'qrcode';
 // ---------------------------------------------------------------------------
 // QR images for email.
 //
-// `qrcode.react` renders the on-page QR in the browser; a client that only
-// ever opens the email needs the same code as a bitmap it can display without
-// running any JavaScript. This is the one place that turns a signed payload
-// into pixels — inline as a data: URI, so the image ships inside the HTML
-// with no second request an image-blocking client would drop.
+// Rendered as raw PNG bytes, base64-encoded, for embedding as a CID
+// attachment rather than as a `data:` URI in the `<img src>`. Outlook's
+// desktop client renders HTML mail through Word's engine, which does not
+// display a `data:` URI image at all — the ticket a buyer needs at the gate
+// would silently not be there, with nothing in the message to say so. A CID
+// attachment is a real MIME part instead, referenced from the HTML as
+// `cid:<name>`, and it is the one embedding mechanism that actually renders
+// inline across every major mail client, Outlook included.
 // ---------------------------------------------------------------------------
 
-/** Renders a QR payload as a base64 PNG data URI, sized for an email body. */
-export async function qrDataUrl(payload: string): Promise<string> {
-  return QRCode.toDataURL(payload, {
+/** Renders a QR payload as base64-encoded PNG bytes, for a CID attachment. */
+export async function qrPngBase64(payload: string): Promise<string> {
+  const buffer = await QRCode.toBuffer(payload, {
     errorCorrectionLevel: 'M',
     margin: 1,
     width: 240,
   });
+  return buffer.toString('base64');
 }
