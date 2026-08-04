@@ -45,8 +45,9 @@ export interface DetailRow {
 export interface TicketQr {
   label: string;
   code: string;
-  /** A `data:` URI PNG — inline, so no image request the client can block. */
-  dataUrl: string;
+  /** Matches the `name` of a CID attachment on the message — referenced here
+      as `cid:<cid>`, which is what makes the mail client embed it inline. */
+  cid: string;
 }
 
 export interface EmailLayout {
@@ -90,20 +91,21 @@ function detailTable(rows: DetailRow[]): string {
  * The QR block: one image per ticket, tier and code underneath.
  *
  * A table per ticket, not a grid — the same Outlook constraint as the button
- * below. The image is a `data:` URI, embedded rather than linked, because a
- * remote image is exactly what a mail client blocks until someone clicks
- * "show images," and a ticket nobody can see at the gate is worse than a
- * slightly heavier email.
+ * below. Each image is referenced by `cid:`, matching a CID attachment on the
+ * message, rather than a `data:` URI in `src` — Outlook's desktop client does
+ * not render a `data:` URI image at all, so the ticket a buyer needs at the
+ * gate would silently not be there. A CID attachment is a real MIME part
+ * instead, and every major client, Outlook included, renders it inline.
  */
 function ticketBlock(tickets: TicketQr[]): string {
   const cards = tickets
     .map(
-      ({ label, code, dataUrl }) => `
+      ({ label, code, cid }) => `
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"
                style="background:${CANVAS};border-radius:4px;margin:0 0 12px">
           <tr>
             <td align="center" style="padding:20px">
-              <img src="${dataUrl}" width="200" height="200" alt="QR code for ${esc(label)} ${esc(code)}"
+              <img src="cid:${cid}" width="200" height="200" alt="QR code for ${esc(label)} ${esc(code)}"
                    style="display:block;width:200px;height:200px;border:0;background:${PAPER};border-radius:4px">
               <p style="margin:14px 0 0;font-size:13px;color:${MUTED}">${esc(label)}</p>
               <p style="margin:2px 0 0;font-size:15px;font-weight:600;letter-spacing:0.04em;color:${INK}">${esc(code)}</p>
