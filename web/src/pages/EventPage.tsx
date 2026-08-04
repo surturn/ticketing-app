@@ -5,7 +5,7 @@
  * details and pay. Each extra screen between wanting a ticket and having one
  * costs sales, so there is no cart, no account requirement and no interstitial.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   ApiError,
@@ -179,13 +179,76 @@ export function EventPage() {
     phone: normalisePhoneForDisplay(phone),
   };
 
+  /**
+   * What a preview is actually priced against — not just the basket, but the
+   * buyer too. A preview is a promise about two things at once: how much,
+   * and whose handset gets the M-Pesa prompt. Either one moving under it
+   * makes the preview on screen a lie, which is the failure mode both bugs
+   * below come from — one where the basket moved, one where the buyer did.
+   */
+  const previewKey = `${basketKey}|${buyer.name}|${buyer.email}|${buyer.phone}`;
+
+  /**
+   * `handleReview` closes over whatever `previewKey` was at the moment it was
+   * called, and that closure does not update when the buyer changes the
+   * basket or their details while the request is in flight — state updates
+   * schedule a re-render, they do not reach back into a promise that is
+   * already awaiting. A ref is the one thing that can be read fresh at
+   * resolution time regardless of which render's closure is doing the
+   * reading, which is exactly what "is this response still current"
+   * requires.
+   */
+  const previewKeyRef = useRef(previewKey);
+  useEffect(() => {
+    previewKeyRef.current = previewKey;
+  }, [previewKey]);
+
+  /**
+   * Invalidates the preview on any change to what it was priced against.
+   *
+   * This duplicates the synchronous `setPreview(null)` in the tier
+   * `onChange` below on purpose — that one exists because an effect only
+   * runs after the render it was scheduled by, so without it a new basket
+   * would render for one frame beside a preview priced for the old one, next
+   * to a Pay button that is about to charge the new total. This effect is
+   * the net underneath it: it also covers every path that isn't a tier
+   * click, chiefly the buyer editing their name, email or phone, which has
+   * no equivalent synchronous handler. Do not remove either half — the
+   * overlap on the basket path is deliberate, not an oversight.
+   */
+  useEffect(() => {
+    setPreview(null);
+  }, [previewKey]);
+
   async function handleReview() {
+    // Captured now, checked after the await — see the ref effect above for
+    // why a plain closure over `previewKey` cannot do this.
+    const requestedKey = previewKey;
     setFailure(null);
     setServerErrors({});
     setWorking('preview');
     try {
-      setPreview(await previewCheckout({ eventSlug: slug, items, buyer }));
+      const result = await previewCheckout({ eventSlug: slug, items, buyer });
+
+      // The basket or buyer may have moved on while this was in flight. If
+      // so, `result` is priced and validated against a basket that no longer
+      // exists on screen — applying it would resurrect the exact bug this
+      // guard exists to prevent: a buyer who added a third ticket sees the
+      // two-ticket total, confirms it, and `handlePay` then charges for
+      // three. Stop here and touch no state. The invalidating effect above
+      // has already cleared the preview for the new basket; there is nothing
+      // stale left to clean up, only a result to discard.
+      if (previewKeyRef.current !== requestedKey) return;
+
+      setPreview(result);
     } catch (caught) {
+      // Same staleness guard on the failure path, and for the same reason: a
+      // validation error from a request fired against the old basket or
+      // buyer is exactly as wrong as a stale price. Attaching "that email
+      // looks incomplete" to a field the buyer has since corrected is its
+      // own false report, not a lesser one.
+      if (previewKeyRef.current !== requestedKey) return;
+
       const perField = fieldErrors(caught);
       setServerErrors(perField);
 
@@ -203,6 +266,17 @@ export function EventPage() {
         notify('We could not reach the server. Check your connection and try again.');
       }
     } finally {
+      // Cleared unconditionally — including when the response above turned
+      // out to be stale and was discarded. `working` gates the Review
+      // button's own busy state (`disabled={disabled || busy}` in Button),
+      // and while it is true the buyer cannot fire a new request, but they
+      // *can* still change the basket or edit their details underneath it —
+      // that is precisely the race this file is guarding against. If a
+      // stale response left `working` set to `'preview'`, the Review button
+      // would stay disabled for a basket the buyer has already moved past,
+      // with no way left to ask for a current price. Ending the in-flight
+      // request's busy state is bookkeeping about the request, not about the
+      // result it carried, so it is correct regardless of which one this was.
       setWorking(null);
     }
   }
