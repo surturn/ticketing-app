@@ -131,3 +131,32 @@ export async function organisationForNewEvent(scope: AdminScope): Promise<string
 
   return fallback.id;
 }
+
+/**
+ * Vets an organiser, or withdraws it.
+ *
+ * Platform-only, checked before anything else touches a row: verification is a
+ * claim *the platform* makes about someone, not something an organisation-
+ * scoped admin can grant itself. Refusing here — before the update, and
+ * regardless of whose id was passed — is what stops an organiser from vetting
+ * itself through this route, including via its own organisation id.
+ */
+export async function verifyOrganisation(
+  scope: AdminScope,
+  organisationId: string,
+  verified: boolean,
+): Promise<{ id: string; verified: boolean }> {
+  if (scope.kind !== 'platform') {
+    throw forbidden('Only the platform may verify an organisation');
+  }
+
+  const [updated] = await db
+    .update(organisations)
+    .set({ verifiedAt: verified ? new Date() : null, updatedAt: new Date() })
+    .where(eq(organisations.id, organisationId))
+    .returning({ id: organisations.id, verifiedAt: organisations.verifiedAt });
+
+  if (!updated) throw notFound(`No organisation with id ${organisationId}`);
+
+  return { id: updated.id, verified: updated.verifiedAt !== null };
+}

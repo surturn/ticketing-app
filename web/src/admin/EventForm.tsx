@@ -13,9 +13,11 @@
 import { useEffect, useState } from 'react';
 import { ApiError } from '@/lib/api';
 import { Button } from '@/components/ui';
+import { CATEGORY_LABELS, CATEGORY_ORDER } from '@/lib/eventImages';
 import {
   ACCEPTED_POSTER_TYPES,
   MAX_POSTER_BYTES,
+  uploadHero,
   uploadPoster,
   type AdminEvent,
   type EventInput,
@@ -145,6 +147,149 @@ const inputClass = (invalid?: boolean) =>
     invalid ? 'border-error focus:border-error' : 'border-outline focus:border-primary'
   }`;
 
+/**
+ * Upload, or paste a URL, with a preview at the ratio the storefront crops to.
+ *
+ * Written once and used twice. The poster and the hero differ only in their
+ * aspect ratio and their copy — duplicating forty lines for the second one is
+ * how the two drift apart, and the drift always shows up as the newer field
+ * quietly missing a validation the older one has.
+ */
+function ImageField({
+  label,
+  hint,
+  value,
+  onChange,
+  onUpload,
+  aspect,
+  previewWidth,
+  error,
+}: {
+  label: string;
+  hint: string;
+  value: string;
+  onChange: (next: string) => void;
+  onUpload: (file: File) => Promise<{ url: string }>;
+  aspect: string;
+  previewWidth: string;
+  error?: string;
+}) {
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  const insecure = value.trim() !== '' && !value.trim().startsWith('https://');
+
+  /**
+   * Checks the obvious things before spending the organiser's bandwidth.
+   *
+   * The API validates all of this again from the bytes — these checks exist to
+   * fail a 12MB photo in the same instant it was chosen, rather than after a
+   * minute of uploading on mobile data.
+   */
+  async function handleFile(file: File) {
+    if (file.size > MAX_POSTER_BYTES) {
+      setUploadError('That image is larger than 2MB. Please use a smaller file.');
+      return;
+    }
+    if (!ACCEPTED_POSTER_TYPES.includes(file.type as (typeof ACCEPTED_POSTER_TYPES)[number])) {
+      setUploadError('Please choose a PNG, JPEG or WebP image.');
+      return;
+    }
+
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const { url } = await onUpload(file);
+      onChange(url);
+    } catch (caught) {
+      setUploadError(
+        caught instanceof ApiError ? caught.message : 'That upload failed. Please try again.',
+      );
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3 rounded-md border border-outline-variant p-4">
+      <Field label={label} hint={hint} error={uploadError ?? error}>
+        <div className="flex flex-wrap items-center gap-3">
+          <label
+            className={`md-state md-label-large trimmed inline-flex h-12 cursor-pointer items-center gap-2 border border-outline px-5 text-on-surface ${
+              uploading ? 'pointer-events-none opacity-60' : ''
+            }`}
+          >
+            <span className="md-state-layer" aria-hidden="true" />
+            <span className="relative">
+              {uploading ? 'Uploading…' : value ? 'Replace image' : 'Choose image'}
+            </span>
+            <input
+              type="file"
+              // Filters the picker only. The API re-checks the bytes, because
+              // this attribute is a hint the browser applies and anyone can
+              // send whatever they like straight to the endpoint.
+              accept={ACCEPTED_POSTER_TYPES.join(',')}
+              className="sr-only"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                // Cleared so choosing the same file twice fires again — after a
+                // failed upload, re-picking it is the obvious retry.
+                e.target.value = '';
+                if (file) void handleFile(file);
+              }}
+            />
+          </label>
+
+          {uploading && (
+            // An indeterminate bar, not a percentage: `fetch` does not report
+            // upload progress without dropping to XHR, and a fake percentage is
+            // worse than an honest "working".
+            <span className="skeleton h-1.5 w-32 rounded-full" aria-hidden="true" />
+          )}
+
+          {value && !uploading && (
+            <Button type="button" variant="text" onClick={() => onChange('')}>
+              Remove
+            </Button>
+          )}
+        </div>
+      </Field>
+
+      <Field
+        label="…or paste a URL"
+        hint="For artwork already hosted somewhere. Must start with https://."
+        error={insecure ? 'Must be an https:// URL.' : undefined}
+      >
+        <input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          inputMode="url"
+          maxLength={2000}
+          placeholder="https://…"
+          className={`${inputClass(insecure)} font-data text-sm`}
+        />
+      </Field>
+
+      {/* Shown at the ratio the storefront actually crops to, so artwork that
+          will lose its subject to the crop is obvious now rather than after
+          publishing. */}
+      {value.trim() && !insecure && (
+        <div>
+          <p className="md-label-large text-on-surface-variant">Preview</p>
+          <img
+            src={value.trim()}
+            alt=""
+            className={`mt-1.5 ${aspect} ${previewWidth} rounded-md border border-outline-variant object-cover object-top`}
+            onError={(e) => {
+              e.currentTarget.style.display = 'none';
+            }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function EventForm({
   existing,
   onSubmit,
@@ -167,6 +312,8 @@ export function EventForm({
   const [description, setDescription] = useState(existing?.description ?? '');
   const [venue, setVenue] = useState(existing?.venue ?? '');
   const [posterUrl, setPosterUrl] = useState(existing?.posterUrl ?? '');
+  const [heroUrl, setHeroUrl] = useState(existing?.heroUrl ?? '');
+  const [category, setCategory] = useState(existing?.category ?? '');
   const [timezone, setTimezone] = useState(existing?.timezone ?? 'Africa/Nairobi');
   const [currency, setCurrency] = useState(existing?.currency ?? 'KES');
   const [status, setStatus] = useState<EventStatus>(existing?.status ?? 'draft');
@@ -177,49 +324,13 @@ export function EventForm({
     toLocalInput(existing?.endsAt ?? null, existing?.timezone ?? 'Africa/Nairobi'),
   );
 
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-
   useEffect(() => {
     if (!slugTouched) setSlug(slugify(name));
   }, [name, slugTouched]);
 
-  /**
-   * Checks the obvious things before spending the organiser's bandwidth.
-   *
-   * The API validates all of this again from the bytes — these checks exist to
-   * fail a 12MB photo in the same instant it was chosen, rather than after a
-   * minute of uploading on mobile data.
-   */
-  async function handleUpload(file: File) {
-    if (file.size > MAX_POSTER_BYTES) {
-      setUploadError('That image is larger than 2MB. Please use a smaller file.');
-      return;
-    }
-    if (!ACCEPTED_POSTER_TYPES.includes(file.type as (typeof ACCEPTED_POSTER_TYPES)[number])) {
-      setUploadError('Please choose a PNG, JPEG or WebP image.');
-      return;
-    }
-
-    setUploading(true);
-    setUploadError(null);
-    try {
-      const { url } = await uploadPoster(file);
-      setPosterUrl(url);
-    } catch (caught) {
-      setUploadError(
-        caught instanceof ApiError ? caught.message : 'That upload failed. Please try again.',
-      );
-    } finally {
-      setUploading(false);
-    }
-  }
-
   const remote = fieldErrors(error);
   const generalError =
     error instanceof ApiError && Object.keys(remote).length === 0 ? error.message : null;
-
-  const posterLooksInsecure = posterUrl.trim() !== '' && !posterUrl.trim().startsWith('https://');
 
   function handleSubmit(formEvent: React.FormEvent) {
     formEvent.preventDefault();
@@ -236,6 +347,8 @@ export function EventForm({
       ...(description.trim() ? { description: description.trim() } : {}),
       ...(venue.trim() ? { venue: venue.trim() } : {}),
       ...(posterUrl.trim() ? { posterUrl: posterUrl.trim() } : {}),
+      ...(heroUrl.trim() ? { heroUrl: heroUrl.trim() } : {}),
+      ...(category ? { category } : {}),
       timezone,
       currency: currency.trim().toUpperCase(),
       startsAt: start,
@@ -287,78 +400,43 @@ export function EventForm({
       {/* Upload first, paste second. The organiser has the artwork on the
           device they are holding; asking for a URL means finding somewhere to
           host it first, which is a task nobody came here to do. The URL field
-          stays for posters already hosted elsewhere. */}
-      <Field
+          stays for artwork already hosted elsewhere. */}
+      <ImageField
         label="Poster"
-        hint="PNG, JPEG or WebP, up to 2MB. Shown at 4:5 — the crop takes from the bottom."
-        error={uploadError ?? remote.posterUrl ?? undefined}
-      >
-        <div className="flex flex-wrap items-center gap-3">
-          <label
-            className={`md-state md-label-large trimmed inline-flex h-12 cursor-pointer items-center gap-2 border border-outline px-5 text-on-surface ${
-              uploading ? 'pointer-events-none opacity-60' : ''
-            }`}
-          >
-            <span className="md-state-layer" aria-hidden="true" />
-            <span className="relative">
-              {uploading ? 'Uploading…' : posterUrl ? 'Replace image' : 'Choose image'}
-            </span>
-            <input
-              type="file"
-              // Filters the picker only. The API re-checks the bytes, because
-              // this attribute is a hint the browser applies and anyone can
-              // send whatever they like straight to the endpoint.
-              accept={ACCEPTED_POSTER_TYPES.join(',')}
-              className="sr-only"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                // Cleared so choosing the same file twice fires again — after a
-                // failed upload, re-picking it is the obvious retry.
-                e.target.value = '';
-                if (file) void handleUpload(file);
-              }}
-            />
-          </label>
+        hint="PNG, JPEG or WebP, up to 2MB. Recommended 4:5 — the crop takes from the bottom."
+        value={posterUrl}
+        onChange={setPosterUrl}
+        onUpload={uploadPoster}
+        aspect="aspect-4/5"
+        previewWidth="w-36"
+        error={remote.posterUrl}
+      />
 
-          {posterUrl && !uploading && (
-            <Button type="button" variant="text" onClick={() => setPosterUrl('')}>
-              Remove
-            </Button>
-          )}
-        </div>
+      <ImageField
+        label="Hero image"
+        hint="Optional, 16:9. A photograph of the event or the room — this is what fills the top of the event page. Without one we use the poster, then a house image."
+        value={heroUrl}
+        onChange={setHeroUrl}
+        onUpload={uploadHero}
+        aspect="aspect-video"
+        previewWidth="w-72"
+        error={remote.heroUrl}
+      />
+
+      <Field label="Category" hint="Groups the event on the homepage." error={remote.category}>
+        <select
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          className={inputClass(Boolean(remote.category))}
+        >
+          <option value="">Uncategorised</option>
+          {CATEGORY_ORDER.map((value) => (
+            <option key={value} value={value}>
+              {CATEGORY_LABELS[value]}
+            </option>
+          ))}
+        </select>
       </Field>
-
-      <Field
-        label="…or paste a URL"
-        hint="For artwork already hosted somewhere. Must start with https://."
-        error={posterLooksInsecure ? 'Must be an https:// URL.' : undefined}
-      >
-        <input
-          value={posterUrl}
-          onChange={(e) => setPosterUrl(e.target.value)}
-          inputMode="url"
-          maxLength={2000}
-          placeholder="https://…"
-          className={`${inputClass(posterLooksInsecure)} font-data text-sm`}
-        />
-      </Field>
-
-      {/* Shown at the ratio the storefront actually crops to, so a poster that
-          will lose its title to the crop is obvious now rather than after
-          publishing. */}
-      {posterUrl.trim() && !posterLooksInsecure && (
-        <div>
-          <p className="md-label-large text-on-surface-variant">Preview</p>
-          <img
-            src={posterUrl.trim()}
-            alt=""
-            className="mt-1.5 aspect-4/5 w-36 rounded-md border border-outline-variant object-cover object-top"
-            onError={(e) => {
-              e.currentTarget.style.display = 'none';
-            }}
-          />
-        </div>
-      )}
 
       <Field label="Description" error={remote.description}>
         <textarea

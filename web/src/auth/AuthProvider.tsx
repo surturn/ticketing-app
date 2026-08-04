@@ -26,11 +26,11 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { onIdTokenChanged, type User } from 'firebase/auth';
+import type { User } from 'firebase/auth';
 import { completeRedirectSignIn, signOutOfApp } from '@/lib/auth';
 import { postSession, type SessionResponse } from '@/lib/api';
 import { isFirebaseConfigured } from '@/lib/firebase-config';
-import { firebaseAuth } from '@/lib/firebase';
+import { getFirebaseAuth } from '@/lib/firebase';
 
 export type AuthStatus = 'loading' | 'signed-out' | 'signed-in';
 
@@ -108,30 +108,69 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!accountsAvailable) return;
 
-    // Resolves a sign-in that went through a full page redirect. Runs before the
-    // listener settles anything, so a redirect return does not flash the
-    // signed-out screen on its way to being signed in.
-    void completeRedirectSignIn().catch(() => {});
+    // This effect is the one place in the app that needs Firebase on every
+    // load rather than on a deliberate action — it is how the app bar knows
+    // whether to offer "Sign in" or "My tickets" at all. Everything below is
+    // async because of that: `getFirebaseAuth()` and `onIdTokenChanged` itself
+    // are both behind a dynamic `import('firebase/auth')`, so the SDK arrives
+    // as its own chunk fetched after the entry chunk has already parsed and
+    // painted, instead of being part of what a guest's browser must download
+    // and execute before anything renders. Making this import eager again
+    // would put the whole auth SDK back on the critical path for every visit,
+    // which is the exact regression this file exists to avoid.
+    //
+    // Because subscribing is now async, unmounting mid-import needs its own
+    // guard: `cancelled` stops a subscription from being created at all once
+    // the component is gone, and the cleanup below also unsubscribes in the
+    // ordinary case where the listener was already attached. Between the two,
+    // no subscription outlives the component regardless of when the import
+    // settles relative to unmount.
+    let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
 
-    // `onIdTokenChanged` rather than `onAuthStateChanged`: it also fires on token
-    // refresh and on profile reloads, which is how a freshly verified address
-    // reaches this component at all.
-    return onIdTokenChanged(firebaseAuth(), (current) => {
-      setUser(current);
-      setStatus(current ? 'signed-in' : 'signed-out');
+    void (async () => {
+      // Resolves a sign-in that went through a full page redirect. Runs before
+      // the listener settles anything, so a redirect return does not flash the
+      // signed-out screen on its way to being signed in.
+      void completeRedirectSignIn().catch(() => {});
 
-      if (current) {
-        void announce(current);
-      } else {
-        announced.current = null;
-        setSession(null);
-        setSessionError(null);
-      }
-    });
+      const [auth, { onIdTokenChanged }] = await Promise.all([
+        getFirebaseAuth(),
+        import('firebase/auth'),
+      ]);
+
+      if (cancelled) return;
+
+      // `onIdTokenChanged` rather than `onAuthStateChanged`: it also fires on
+      // token refresh and on profile reloads, which is how a freshly verified
+      // address reaches this component at all.
+      unsubscribe = onIdTokenChanged(auth, (current) => {
+        setUser(current);
+        setStatus(current ? 'signed-in' : 'signed-out');
+
+        if (current) {
+          void announce(current);
+        } else {
+          announced.current = null;
+          setSession(null);
+          setSessionError(null);
+        }
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
   }, [accountsAvailable, announce]);
 
   const refresh = useCallback(async () => {
-    const current = firebaseAuth().currentUser;
+    // Awaited rather than assumed already loaded: `refresh` can in principle
+    // run before the subscribe effect's own import has settled, and there is
+    // only one memoised promise behind `getFirebaseAuth()` either way — this
+    // call shares it rather than starting a second load.
+    const auth = await getFirebaseAuth();
+    const current = auth.currentUser;
     if (!current) return;
 
     await current.reload();
@@ -140,11 +179,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // server see the new state.
     await current.getIdToken(true);
 
-    setUser(firebaseAuth().currentUser);
+    setUser(auth.currentUser);
     // Forced: `refresh` is only ever called deliberately — after saving a
     // profile, or while waiting on a verification — and in both cases the
     // caller wants the server's current answer, not a cached one.
-    await announce(firebaseAuth().currentUser!, true);
+    await announce(auth.currentUser!, true);
   }, [announce]);
 
   const signOut = useCallback(async () => {

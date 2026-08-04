@@ -23,7 +23,10 @@ import { selectUpcoming, UpcomingTickets } from '@/components/UpcomingTickets';
 import { EventPoster } from '@/components/EventPoster';
 import { FeaturedEvent } from '@/components/FeaturedEvent';
 import { EventRail } from '@/components/EventRail';
-import { StageHero } from '@/components/StageHero';
+import { HomeHero } from '@/components/HomeHero';
+import { Section } from '@/components/Section';
+import { TrustBar, BUYER_TRUST } from '@/components/TrustBar';
+import { CATEGORY_LABELS, CATEGORY_ORDER } from '@/lib/eventImages';
 import {
   applyFilters,
   DEFAULT_FILTERS,
@@ -87,29 +90,21 @@ export function EventsPage() {
   // The spotlight is the soonest event, and only while the buyer is browsing
   // unfiltered. Once they search, they have told us what they want and a
   // feature slot for something else is just an obstacle above the results.
+  // A chosen category counts as narrowing too: it also gates the category
+  // rails below, and a buyer who just tapped "Music" should not see a Comedy
+  // rail sitting above a grid that is already narrowed to Music — that reads
+  // as the page ignoring what they asked for.
   const isBrowsing =
-    filters.query.trim() === '' && filters.window === 'any' && filters.sort === 'soonest';
+    filters.query.trim() === '' &&
+    filters.window === 'any' &&
+    filters.sort === 'soonest' &&
+    filters.category === null;
   const featured = isBrowsing ? filtered[0] : undefined;
 
-  return (
-    <div>
-      {/* The landing page is what's on, and nothing else.
-          The listing pitch lives at /host rather than here: a visitor arriving
-          at the domain is looking for something to go to, and a sales page for
-          organisers above the grid put the wrong audience's screen first. The
-          organiser door stays in the app bar and the footer, where someone
-          looking for it will look. */}
-      {signedIn ? (
-        <UpcomingTickets
-          tickets={upcoming}
-          name={
-            (session?.user.displayName ?? user?.displayName)?.split(' ')[0] ?? null
-          }
-        />
-      ) : (
-        <StageHero events={events} />
-      )}
-
+  // Everything below the masthead, shared by both the guest (hero) and
+  // signed-in (ticket wallet) branches — only the wrapper around it differs.
+  const discovery = (
+    <>
       {/* A rail of what is closest, above the full grid.
           Only worth the space once there is enough behind it to scroll — with
           three events it would just be the grid again, rotated. */}
@@ -117,11 +112,32 @@ export function EventsPage() {
         <EventRail title="Happening soon" events={events.slice(0, 10)} />
       )}
 
-      {/* Discovery starts here. Headed and anchored so the section is navigable
-          rather than being an unlabelled grid hanging off the bottom. */}
-      <h2 id="whats-on" className="md-headline-medium mb-6 scroll-mt-20">
-        What&rsquo;s on
-      </h2>
+      {/* One rail per category that has enough behind it to be worth scrolling.
+          Three is the floor: with two, a rail is a grid of two rotated ninety
+          degrees, and a section heading over almost nothing reads as a category
+          that is failing rather than one that is starting. */}
+      {!loading &&
+        !error &&
+        isBrowsing &&
+        CATEGORY_ORDER.map((category) => {
+          const inCategory = events.filter((e) => e.category === category);
+          if (inCategory.length < 3) return null;
+
+          return (
+            <Section
+              key={category}
+              id={`category-${category}`}
+              title={CATEGORY_LABELS[category]}
+              action={{ to: '#whats-on', label: 'View all' }}
+            >
+              <EventRail
+                title={CATEGORY_LABELS[category]}
+                events={inCategory.slice(0, 10)}
+                headed={false}
+              />
+            </Section>
+          );
+        })}
 
       {loading && (
         <>
@@ -153,13 +169,24 @@ export function EventsPage() {
 
       {!loading && !error && events.length > 0 && (
         <>
-          {featured && <FeaturedEvent event={featured} />}
+          {featured && (
+            <Section title="Featured Event" action={{ to: '#whats-on', label: 'View all events' }}>
+              <FeaturedEvent event={featured} />
+            </Section>
+          )}
 
           <EventFilters
             filters={filters}
             onChange={setFilters}
-            resultCount={filtered.length}
+            showSearch={signedIn}
           />
+
+          {/* Discovery starts here. Headed and anchored so the section is
+              navigable rather than being an unlabelled grid hanging off the
+              bottom. */}
+          <h2 id="whats-on" className="md-headline-medium mb-6 scroll-mt-20">
+            Upcoming Events
+          </h2>
 
           {/* The empty state keys off `filtered`, not `rest`.
               Keying it off `rest` meant a single event was promoted into the
@@ -193,6 +220,49 @@ export function EventsPage() {
               ))}
             </div>
           )}
+        </>
+      )}
+    </>
+  );
+
+  return (
+    <div>
+      {signedIn ? (
+        <>
+          <UpcomingTickets
+            tickets={upcoming}
+            name={
+              (session?.user.displayName ?? user?.displayName)?.split(' ')[0] ?? null
+            }
+          />
+
+          {/* A signed-in visitor has no hero to hold the reassurance row — it
+              moved inside `HomeHero` for everyone else — so it keeps its own
+              slot here rather than disappearing for the one audience that
+              never sees the masthead. */}
+          <div className="mb-(--space-section-sm) sm:mb-(--space-section)">
+            <TrustBar items={BUYER_TRUST} />
+          </div>
+
+          {discovery}
+        </>
+      ) : (
+        <>
+          <HomeHero
+            events={events}
+            query={filters.query}
+            onQueryChange={(query) => setFilters((f) => ({ ...f, query }))}
+          />
+
+          {/* A rounded white sheet, cut into the hero's bottom edge rather
+              than simply stacked beneath it — the negative top margin pulls it
+              up over the photograph, so the corner reads as the page
+              genuinely overlapping the masthead. `relative` plus a positive
+              stacking context is what lets it draw over the hero rather than
+              under it. */}
+          <div className="relative z-10 -mx-4 -mt-6 rounded-t-[28px] bg-surface px-4 pt-8 sm:-mx-6 sm:-mt-8 sm:px-6 sm:pt-10">
+            {discovery}
+          </div>
         </>
       )}
     </div>

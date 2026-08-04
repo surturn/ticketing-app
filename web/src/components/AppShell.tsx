@@ -5,12 +5,11 @@
  * checkout — a buyer who loses their way mid-purchase and finds no way back to
  * the events list abandons the purchase rather than starting over.
  */
-import { useState, type ReactNode } from 'react';
-import { Link, NavLink } from 'react-router-dom';
-import { AnimatePresence, motion } from 'framer-motion';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { Link, NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '@/auth/AuthProvider';
 import { WelcomeModal } from '@/auth/WelcomeModal';
-import { ThemeToggle, useTheme } from '@/lib/theme';
+import { useTheme } from '@/lib/theme';
 import { ButtonLink } from '@/components/ui';
 import { ConsentBanner } from '@/components/ConsentBanner';
 
@@ -59,100 +58,6 @@ function Wordmark() {
   );
 }
 
-/** The hamburger / close glyph, morphing between the two rather than swapping icons. */
-function MenuGlyph({ open }: { open: boolean }) {
-  return (
-    <svg viewBox="0 0 24 24" className="size-5" fill="none" aria-hidden="true">
-      <path
-        d={open ? 'M6 6l12 12' : 'M4 7h16'}
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-      />
-      <path
-        d="M4 12h16"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-        className="transition-opacity"
-        opacity={open ? 0 : 1}
-      />
-      <path
-        d={open ? 'M6 18L18 6' : 'M4 17h16'}
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-/**
- * Everything below `sm` that used to sit inline: Events, the account link,
- * and the theme switch. Named in the menu rather than left as an icon —
- * there is room for a word here that there never was in the bar itself.
- *
- * Host keeps its own button outside this menu (see `AppShell`) rather than
- * joining it, for the same reason the bar always gave it a place of its own:
- * an organiser on a phone is the customer, and burying the one thing they
- * came for behind a tap into a menu would be the wrong economy.
- */
-function MobileMenu({ onNavigate }: { onNavigate: () => void }) {
-  const { accountsAvailable, status } = useAuth();
-  const { resolved, toggle } = useTheme();
-  const goingTo = resolved === 'dark' ? 'light' : 'dark';
-
-  const itemClass =
-    'md-label-large trimmed flex items-center rounded-md px-4 py-3 transition-colors text-on-surface-variant hover:bg-tertiary/14 hover:text-on-surface';
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: -8 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -8 }}
-      transition={{ duration: 0.15 }}
-      className="absolute inset-x-4 top-full z-40 mt-2 overflow-hidden rounded-md border border-outline-variant bg-surface-container-high shadow-xl sm:hidden"
-      role="menu"
-    >
-      <NavLink
-        to="/"
-        end
-        onClick={onNavigate}
-        className={({ isActive }) =>
-          `${itemClass} ${isActive ? 'bg-primary-container text-on-primary-container' : ''}`
-        }
-        role="menuitem"
-      >
-        Events
-      </NavLink>
-
-      {accountsAvailable &&
-        (status === 'signed-in' ? (
-          <NavLink to="/account" onClick={onNavigate} className={itemClass} role="menuitem">
-            My tickets
-          </NavLink>
-        ) : (
-          <Link to="/signin" onClick={onNavigate} className={itemClass} role="menuitem">
-            Sign in
-          </Link>
-        ))}
-
-      <button
-        type="button"
-        onClick={() => {
-          toggle();
-          onNavigate();
-        }}
-        className={`${itemClass} w-full justify-between text-left`}
-        role="menuitem"
-      >
-        <span>{resolved === 'dark' ? 'Light mode' : 'Dark mode'}</span>
-        <span className="md-body-small text-on-surface-variant">Switch to {goingTo}</span>
-      </button>
-    </motion.div>
-  );
-}
-
 function navClass({ isActive }: { isActive: boolean }): string {
   return [
     'md-label-large trimmed px-4 py-2 transition-colors',
@@ -165,6 +70,183 @@ function navClass({ isActive }: { isActive: boolean }): string {
       ? 'bg-primary-container text-on-primary-container'
       : 'text-on-surface-variant hover:bg-tertiary/14 hover:text-on-surface',
   ].join(' ');
+}
+
+/** Shared frame for the two circular nav controls — the account door and the
+    menu. An outline rather than a fill: neither is an action on its own, so
+    neither should read with the weight of one. */
+const NAV_ICON_BUTTON =
+  'md-state relative flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-full border border-outline-variant text-on-surface-variant transition-colors hover:text-on-surface sm:size-10';
+
+function PersonIcon() {
+  return (
+    <svg viewBox="0 0 20 20" className="relative size-4.5 sm:size-5" fill="none" aria-hidden="true">
+      <circle cx="10" cy="6.5" r="3" stroke="currentColor" strokeWidth="1.6" />
+      <path
+        d="M3.5 17c0-3.3 2.9-6 6.5-6s6.5 2.7 6.5 6"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function SocialFacebookIcon() {
+  return (
+    <svg viewBox="0 0 20 20" className="size-4.5" fill="none" aria-hidden="true">
+      <path
+        d="M13 4h-2a3 3 0 0 0-3 3v2H6v3h2v6h3v-6h2.2l.5-3H11V7c0-.6.4-1 1-1h1V4Z"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function SocialInstagramIcon() {
+  return (
+    <svg viewBox="0 0 20 20" className="size-4.5" fill="none" aria-hidden="true">
+      <rect x="3" y="3" width="14" height="14" rx="4" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="10" cy="10" r="3.2" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="14" cy="6" r="0.9" fill="currentColor" />
+    </svg>
+  );
+}
+
+function SocialTwitterIcon() {
+  return (
+    <svg viewBox="0 0 20 20" className="size-4.5" fill="none" aria-hidden="true">
+      <path
+        d="M17 5.3c-.6.3-1.2.5-1.9.6a3.2 3.2 0 0 0 1.4-1.8c-.6.4-1.4.7-2.1.8a3.3 3.3 0 0 0-5.6 3 9.4 9.4 0 0 1-6.8-3.5 3.3 3.3 0 0 0 1 4.4c-.5 0-1-.2-1.5-.4v.1c0 1.6 1.1 2.9 2.6 3.2a3.3 3.3 0 0 1-1.5.1 3.3 3.3 0 0 0 3.1 2.3A6.6 6.6 0 0 1 3 15.4a9.3 9.3 0 0 0 5.1 1.5c6.1 0 9.4-5.1 9.4-9.4v-.4c.6-.5 1.2-1.1 1.5-1.8Z"
+        stroke="currentColor"
+        strokeWidth="1.1"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function SocialLinkedInIcon() {
+  return (
+    <svg viewBox="0 0 20 20" className="size-4.5" fill="none" aria-hidden="true">
+      <rect x="3" y="3" width="14" height="14" rx="2.5" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="6.6" cy="6.8" r="1" fill="currentColor" />
+      <path d="M6.6 9.5v4.2M9.6 13.7V9.9c0-1.6 2.6-1.6 2.6 0v3.8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function MenuIcon() {
+  return (
+    <svg viewBox="0 0 20 20" className="relative size-4.5 sm:size-5" fill="none" aria-hidden="true">
+      <path
+        d="M3 6h14M3 10h14M3 14h14"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+/**
+ * The hamburger.
+ *
+ * Everything inside it already existed somewhere — Help, Terms and Privacy in
+ * the footer, the theme switch as its own icon — but reaching any of them from
+ * the middle of a page meant either scrolling to the bottom or leaving for the
+ * legal pages directly. This puts the same handful of things one tap away from
+ * anywhere the bar is visible, which is the actual job a control like this
+ * does; it does not gain a page of its own.
+ *
+ * A plain disclosure rather than `role="menu"`: that role commits to arrow-key
+ * navigation between items, which this does not implement, and claiming it
+ * without the behaviour is worse for a screen-reader user than not claiming it
+ * at all. `aria-expanded` plus a real, tabbable button and link list is enough.
+ */
+function MoreMenu() {
+  const [open, setOpen] = useState(false);
+  const { resolved, toggle } = useTheme();
+  const containerRef = useRef<HTMLDivElement>(null);
+  const panelId = useId();
+
+  useEffect(() => {
+    if (!open) return;
+
+    function handlePointer(event: PointerEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') setOpen(false);
+    }
+
+    document.addEventListener('pointerdown', handlePointer);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointer);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-controls={panelId}
+        aria-label="More"
+        title="More"
+        className={NAV_ICON_BUTTON}
+      >
+        <span className="md-state-layer" aria-hidden="true" />
+        <MenuIcon />
+      </button>
+
+      {open && (
+        <div
+          id={panelId}
+          className="md-elevation-2 absolute right-0 z-50 mt-2 w-52 rounded-md p-2"
+        >
+          <button
+            type="button"
+            onClick={() => {
+              toggle();
+              setOpen(false);
+            }}
+            className="md-state md-body-medium flex w-full cursor-pointer items-center rounded-sm px-3 py-2.5 text-left text-on-surface transition-colors"
+          >
+            <span className="md-state-layer" aria-hidden="true" />
+            <span className="relative">
+              {resolved === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            </span>
+          </button>
+
+          <div className="my-1 border-t border-outline-variant" />
+
+          {[
+            { to: '/help', label: 'Help' },
+            { to: '/terms', label: 'Terms' },
+            { to: '/privacy', label: 'Privacy' },
+          ].map((item) => (
+            <Link
+              key={item.to}
+              to={item.to}
+              onClick={() => setOpen(false)}
+              className="md-state md-body-medium flex cursor-pointer items-center rounded-sm px-3 py-2.5 text-on-surface transition-colors"
+            >
+              <span className="md-state-layer" aria-hidden="true" />
+              <span className="relative">{item.label}</span>
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ─── Footer ────────────────────────────────────────────────────────────────
@@ -261,11 +343,38 @@ function FirstSignInWelcome() {
   );
 }
 
+function BackArrowIcon() {
+  return (
+    <svg viewBox="0 0 20 20" className="size-4 shrink-0" fill="none" aria-hidden="true">
+      <path
+        d="M12 4 5 10l7 6M5 10h11"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   // `user` is no longer read here: the account link names its destination
   // rather than the person signed into it.
   const { status, accountsAvailable } = useAuth();
-  const [menuOpen, setMenuOpen] = useState(false);
+
+  /**
+   * A quieter masthead for the page a buyer is actually spending money on.
+   *
+   * Everywhere else the header sells the platform — discovery links, the
+   * organiser door, an account icon. On the one screen where someone is
+   * choosing tickets and typing a phone number, those are distractions from
+   * the one thing that matters: getting back to the listing if this isn't the
+   * right event, or continuing if it is. So the marketing links and the
+   * account door step aside for a single "Back to events" and a quieter,
+   * outlined route to hosting.
+   */
+  const location = useLocation();
+  const isCheckoutFlow = /^\/events\/[^/]+\/?$/.test(location.pathname);
 
   return (
     <div className="flex min-h-dvh flex-col">
@@ -279,119 +388,107 @@ export function AppShell({ children }: { children: ReactNode }) {
           off the main thread — a per-frame layout read is the last thing a
           mid-range Android needs while a poster grid is decoding. */}
       <header className="header-lift sticky top-0 z-40 border-b border-outline-variant/60 bg-surface-container-low">
-        {/* `relative`, so the mobile menu below can anchor to this bar rather
-            than to the page — `top-full` needs a positioned ancestor to mean
-            anything. */}
-        <div className="relative mx-auto flex h-14 max-w-6xl items-center justify-between gap-2 px-4 sm:h-16 sm:gap-4 sm:px-6">
+        {isCheckoutFlow ? (
+          <div className="mx-auto grid h-14 max-w-[1440px] grid-cols-[1fr_auto_1fr] items-center gap-2 px-4 sm:h-16 sm:px-6">
+            <Link
+              to="/"
+              className="md-label-large flex items-center gap-1.5 text-on-surface-variant transition-colors hover:text-on-surface"
+            >
+              <BackArrowIcon />
+              <span className="hidden sm:inline">Back to events</span>
+            </Link>
+
+            <div className="flex justify-center">
+              <Wordmark />
+            </div>
+
+            <div className="flex items-center justify-end gap-2">
+              <Link
+                to="/host"
+                className="md-state md-label-large trimmed hidden h-9 items-center border border-primary px-4 text-primary transition-colors sm:inline-flex sm:h-10 sm:px-5"
+              >
+                <span className="md-state-layer" aria-hidden="true" />
+                <span className="relative">Host Event</span>
+              </Link>
+              <MoreMenu />
+            </div>
+          </div>
+        ) : (
+        <div className="mx-auto flex h-14 max-w-[1440px] items-center justify-between gap-2 px-4 sm:h-16 sm:gap-4 sm:px-6">
           <Wordmark />
 
           {/* `shrink-0` so the nav keeps its size and the wordmark truncates
               instead — the controls are what people came to press. */}
-          <nav className="flex shrink-0 items-center gap-1" aria-label="Main">
-            {/* Theme and Events move into the mobile menu below `sm` — see
-                `MobileMenu`. Kept inline above it, where the width for them
-                already exists. */}
-            <span className="hidden sm:contents">
-              <ThemeToggle />
-
-              <NavLink
-                to="/"
-                end
-                className={({ isActive }) => `${navClass({ isActive })} hidden sm:inline-flex`}
-              >
-                Events
+          <nav className="flex shrink-0 items-center gap-1.5 sm:gap-2" aria-label="Main">
+            {/* The four marketing links. There is no room for four extra words
+                beside the wordmark and three controls until the bar has real
+                width to spare, so they wait for `xl` rather than fighting for
+                space on a laptop-width screen — the controls a transaction
+                depends on (host, account, menu) never move to make room. */}
+            <div className="mr-1 hidden items-center gap-1 xl:flex">
+              <NavLink to="/" end className={navClass}>
+                Discover
               </NavLink>
-            </span>
+              {/* `end`, same reason `Discover` has it: without it, a NavLink
+                  whose path is "/" matches every route by prefix and lights up
+                  everywhere, not just on the page it actually points to. */}
+              <NavLink to="/#whats-on" end className={navClass}>
+                Categories
+              </NavLink>
+              <NavLink to="/help" className={navClass}>
+                How it works
+              </NavLink>
+              <NavLink to="/host" className={navClass}>
+                For Organisers
+              </NavLink>
+            </div>
 
-            {accountsAvailable && (
-              <span className="hidden sm:contents">
-                {status === 'signed-in' ? (
-                  <NavLink to="/account" className={navClass}>
-                    {/* Names the destination, not the person.
-
-                        The first name was the more personal label and the less
-                        useful one: it told a buyer who they were, which they
-                        knew, while leaving what sits behind the link to be
-                        guessed. Someone who has just paid is looking for their
-                        tickets, and "Events / My tickets / Host an event" reads
-                        as three places to go rather than two places and a
-                        greeting. It also stops the bar changing width with the
-                        length of whoever is signed in. */}
-                    My tickets
-                  </NavLink>
-                ) : (
-                  // A button, not a text link. Signing in is one of the two things
-                  // anyone comes to this bar to do, and rendering it as prose
-                  // beside a pill made it read as a caption for the pill.
-                  // Tonal rather than filled: it must not out-shout the buy action
-                  // on an event page, and §7.5 allows only one filled per view.
-                  <ButtonLink
-                    to="/signin"
-                    variant="tonal"
-                    className="h-10 px-4 text-base whitespace-nowrap"
-                  >
-                    Sign in
-                  </ButtonLink>
-                )}
-              </span>
-            )}
-
-            {/* The organiser door, and the only gold on a consumer surface: it
-                does not accent anything, it means "this leads to the side of
-                the product where you sell". Outlined rather than filled so it
-                never competes with the buy action on an event page.
+            {/* Filled, not outlined. The masthead's one filled action is now
+                the organiser door rather than a quiet outlined pill — it does
+                sit beside a page's own filled buy button on an event page,
+                which is a real trade against §7.5's "one filled action per
+                view", and is accepted here rather than pretended away: the
+                header now reads as its own region rather than one competing
+                with the content beneath it.
 
                 Narrow screens get the short label rather than losing the
-                control — an organiser arriving from a phone is the customer,
-                and burying the one thing they came for in an overflow menu
-                would be the wrong economy. Unlike Events, Sign in and the
-                theme switch, Host stays outside the mobile menu for exactly
-                that reason. */}
+                control outright — an organiser arriving from a phone is the
+                customer, and burying the one thing they came for in an
+                overflow menu would be the wrong economy. */}
             <ButtonLink
               to="/host"
-              variant="outlined-gold"
-              className="h-9 px-3 text-sm whitespace-nowrap sm:ml-1 sm:h-10 sm:px-5 sm:text-base"
+              variant="filled"
+              className="h-9 px-3 text-sm whitespace-nowrap sm:h-10 sm:px-5 sm:text-base"
             >
               <span className="sm:hidden">Host</span>
-              <span className="hidden sm:inline">Host an event</span>
+              <span className="hidden sm:inline">Host Event</span>
             </ButtonLink>
 
-            {/* The menu button itself, and everything it opens. Below `sm`
-                only — above it, every control it would otherwise hold is
-                already inline. */}
-            <button
-              type="button"
-              onClick={() => setMenuOpen((open) => !open)}
-              aria-expanded={menuOpen}
-              aria-haspopup="menu"
-              aria-label={menuOpen ? 'Close menu' : 'Open menu'}
-              className="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-on-surface-variant transition hover:bg-tertiary/14 hover:text-on-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary sm:hidden"
-            >
-              <MenuGlyph open={menuOpen} />
-            </button>
+            {/* The account door, as an icon rather than the word "Sign in" or
+                "My tickets". That costs the door its label, which is a real
+                loss — the label used to do real work distinguishing "you have
+                an account" from "you don't" at a glance — so the destination
+                and the reason for it both still live in `aria-label`/`title`
+                for anyone who can't read it from the glyph alone. */}
+            {accountsAvailable && (
+              <Link
+                to={status === 'signed-in' ? '/account' : '/signin'}
+                aria-label={status === 'signed-in' ? 'My tickets' : 'Sign in'}
+                title={status === 'signed-in' ? 'My tickets' : 'Sign in'}
+                className={NAV_ICON_BUTTON}
+              >
+                <span className="md-state-layer" aria-hidden="true" />
+                <PersonIcon />
+              </Link>
+            )}
+
+            <MoreMenu />
           </nav>
-
-          <AnimatePresence>
-            {menuOpen && <MobileMenu onNavigate={() => setMenuOpen(false)} />}
-          </AnimatePresence>
-
-          {/* A tap anywhere outside the menu closes it. Transparent and
-              beneath the menu itself, above the page — the same job a
-              backdrop does for a dialog, without dimming the page behind a
-              control this casual. */}
-          {menuOpen && (
-            <button
-              type="button"
-              aria-label="Close menu"
-              tabIndex={-1}
-              onClick={() => setMenuOpen(false)}
-              className="fixed inset-0 z-30 cursor-default sm:hidden"
-            />
-          )}
         </div>
+        )}
       </header>
 
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6 sm:py-12">
+      <main className="mx-auto w-full max-w-[1440px] flex-1 px-4 py-8 sm:px-6 sm:py-12">
         {children}
       </main>
 
@@ -406,7 +503,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           Deliberately not a wall of links — §12 rules out footer link-soup, and
           four short columns of things that exist beats forty that do not. */}
       <footer className="mt-16 border-t border-outline-variant/60 bg-surface-container-low">
-        <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
+        <div className="mx-auto max-w-[1440px] px-4 py-12 sm:px-6">
           {/* Two columns on a phone rather than four stacked blocks.
               Single-column made the footer about as tall as some of the pages
               above it, which on a phone is a long scroll past nothing to reach
@@ -425,6 +522,24 @@ export function AppShell({ children }: { children: ReactNode }) {
                 Ticketing for Kenyan events. M-Pesa in, tickets out, money in
                 your account within days rather than weeks.
               </p>
+
+              {/* Placeholders — real handles go here once they exist. Left as
+                  `#` rather than omitted so the row's spacing is already
+                  correct when they are filled in. */}
+              <div className="mt-5 flex items-center gap-4 text-on-surface-variant">
+                <a href="#" aria-label="Facebook" className="transition-colors hover:text-on-surface">
+                  <SocialFacebookIcon />
+                </a>
+                <a href="#" aria-label="Instagram" className="transition-colors hover:text-on-surface">
+                  <SocialInstagramIcon />
+                </a>
+                <a href="#" aria-label="Twitter" className="transition-colors hover:text-on-surface">
+                  <SocialTwitterIcon />
+                </a>
+                <a href="#" aria-label="LinkedIn" className="transition-colors hover:text-on-surface">
+                  <SocialLinkedInIcon />
+                </a>
+              </div>
             </div>
 
             {/* No dashboard link. /admin is reachable by typing it, and the
@@ -448,44 +563,40 @@ export function AppShell({ children }: { children: ReactNode }) {
               </FooterAnchor>
             </FooterColumn>
 
-            <FooterColumn title="At the door" className="col-span-2 lg:col-span-1">
-              <li className="md-body-medium text-on-surface-variant">
-                Tickets arrive by email and scan at the gate.
-              </li>
-              <li className="md-body-medium text-on-surface-variant">
-                They work with no signal once opened.
-              </li>
+            {/* "About us" and "Careers" have no page yet — placeholders to
+                `/help` until they do, rather than dead `#` links in a column
+                whose whole job is to be trustworthy. */}
+            <FooterColumn title="Company">
+              <FooterLink to="/help">About us</FooterLink>
+              <FooterLink to="/help">Careers</FooterLink>
+              <FooterLink to="/terms">Terms</FooterLink>
+              <FooterLink to="/privacy">Privacy</FooterLink>
             </FooterColumn>
           </div>
 
           {/* The trust row. A buyer about to type an M-Pesa PIN and an organiser
               about to hand over their payout details are both looking for the
               same thing here. */}
-          <div className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-3 border-t border-outline-variant/60 pt-6">
-            <Mark label="Pay with M-Pesa" />
-            <Mark label="Encrypted checkout" />
-            <Mark label="Scanned at the gate" />
+          <div className="mt-10 flex flex-wrap items-start justify-between gap-x-6 gap-y-6 border-t border-outline-variant/60 pt-6">
+            <div className="max-w-sm">
+              <h2 className="md-eyebrow text-tertiary-muted">At the door</h2>
+              <p className="md-body-medium mt-2 text-on-surface-variant">
+                Tickets arrive by email and scan at the gate. They work with no
+                signal once opened.
+              </p>
+            </div>
 
-            {/* Required reading, so it sits in the trust row rather than in a
-                column someone has to go looking for. */}
-            <Link
-              to="/privacy"
-              className="md-body-small text-on-surface-variant transition-colors hover:text-on-surface"
-            >
-              Privacy
-            </Link>
-            <Link
-              to="/terms"
-              className="md-body-small text-on-surface-variant transition-colors hover:text-on-surface"
-            >
-              Terms
-            </Link>
-
-            <p className="md-body-small ml-auto text-on-surface-variant">
-              © {new Date().getFullYear()} Eventify Tickets — built by Invonics
-              Technologies
-            </p>
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+              <Mark label="Pay with M-Pesa" />
+              <Mark label="Encrypted checkout" />
+              <Mark label="Scanned at the gate" />
+            </div>
           </div>
+
+          <p className="md-body-small mt-6 border-t border-outline-variant/60 pt-6 text-center text-on-surface-variant">
+            © {new Date().getFullYear()} Eventify Tickets — built by Invonics
+            Technologies
+          </p>
         </div>
       </footer>
     </div>

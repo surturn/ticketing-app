@@ -1,0 +1,21 @@
+-- Marks every organisation that already existed as vetted.
+--
+-- `verified_at` arrived nullable and without a default in 0011, so every row
+-- present before this point reads as unverified — which is wrong. Those
+-- organisations were onboarded by hand, one at a time, and the identity and
+-- payout checks the storefront's badge names were carried out for each of them
+-- before they were allowed to sell. Leaving them null would withhold a badge
+-- they have already earned.
+--
+-- This is deliberately a migration rather than a default on the column. A
+-- default would apply to every organisation created from now on, which is the
+-- opposite of what verification means: the whole point is that a human decided.
+-- As a migration it runs exactly once, against exactly the rows that existed
+-- when it ran, and anyone onboarded afterwards starts unverified and stays that
+-- way until someone vets them and flips the flag through
+-- `PATCH /api/admin/organisations/:id`.
+--
+-- `WHERE verified_at IS NULL` rather than an unconditional UPDATE: on a
+-- database where some rows have already been vetted, this must not rewrite the
+-- timestamp and lose when that happened.
+UPDATE organisations SET verified_at = now() WHERE verified_at IS NULL;
