@@ -254,13 +254,14 @@ export function EventsPage() {
             onQueryChange={(query) => setFilters((f) => ({ ...f, query }))}
           />
 
-          {/* A rounded white sheet, cut into the hero's bottom edge rather
-              than simply stacked beneath it — the negative top margin pulls it
-              up over the photograph, so the corner reads as the page
-              genuinely overlapping the masthead. `relative` plus a positive
-              stacking context is what lets it draw over the hero rather than
-              under it. */}
-          <div className="relative z-10 -mx-4 -mt-6 rounded-t-[28px] bg-surface px-4 pt-8 sm:-mx-6 sm:-mt-8 sm:px-6 sm:pt-10">
+          {/* A rounded white sheet beneath the masthead. It used to be pulled
+              up with a negative top margin to cut into the hero's bottom edge,
+              but the last thing in the hero is the ticker, not the photograph
+              — so the overlap swallowed the moving strip whole. It now starts
+              below the ticker; the rounded corners still read against the
+              strip's bottom rule. `relative` plus a positive stacking context
+              keeps it drawing over the hero rather than under it. */}
+          <div className="relative z-10 -mx-4 mt-0 rounded-t-[28px] bg-surface px-4 pt-8 sm:-mx-6 sm:px-6 sm:pt-10">
             {discovery}
           </div>
         </>
