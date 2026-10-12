@@ -79,6 +79,12 @@ function Root() {
  */
 const router = createBrowserRouter([
   {
+    // Outside `<Root>` deliberately — no navbar, no footer, nothing between
+    // door staff and the camera. See `ScanPage` for why.
+    path: '/scan',
+    lazy: lazyRoute('scan', () => import('./pages/ScanPage'), (m) => m.ScanPage),
+  },
+  {
     element: <Root />,
     // Catches a chunk that will not load and anything a screen throws, in place
     // of React Router's developer error page.

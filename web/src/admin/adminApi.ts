@@ -272,6 +272,34 @@ export function uploadHero(file: File): Promise<{ url: string }> {
 export const getStats = (eventId: string) =>
   adminFetch<EventStats>(`/api/admin/events/${eventId}/stats`);
 
+export interface ScannerToken {
+  token: string;
+  expiresAt: string;
+  jti: string;
+}
+
+/** Mints a gate-scoped scanner link. The token is shown once — only its `jti`
+ *  is kept for revocation, same as the server never stores the raw value. */
+export const mintScannerToken = (
+  eventId: string,
+  body: { gate?: string; ttlHours?: number } = {},
+) =>
+  adminFetch<ScannerToken>(`/api/admin/events/${eventId}/scanner-tokens`, {
+    method: 'POST',
+    body,
+  });
+
+/** Shuts out one scanner link — e.g. a lost phone — without rotating the
+ *  secret every other gate's token is signed with. */
+export const revokeScannerToken = (
+  jti: string,
+  body: { remainingHours?: number; reason?: string } = {},
+) =>
+  adminFetch<{ revoked: boolean; jti: string; effectiveForHours: number }>(
+    `/api/admin/scanner-tokens/${jti}/revoke`,
+    { method: 'POST', body },
+  );
+
 /**
  * Verifies a key by making a real authenticated request.
  *
