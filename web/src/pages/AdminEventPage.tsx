@@ -18,10 +18,13 @@ import {
   getStats,
   listEvents,
   listTiers,
+  mintScannerToken,
+  revokeScannerToken,
   updateTier,
   type AdminEvent,
   type AdminTier,
   type EventStats,
+  type ScannerToken,
   type TierInput,
   type TierStatus,
 } from '@/admin/adminApi';
@@ -215,6 +218,158 @@ function TierEditor({
   );
 }
 
+/**
+ * Hands door staff a working scanner without giving them an account.
+ *
+ * A scanner link is a JWT scoped to this one event and a gate name, good for
+ * however many hours the organiser picks (1-72) — staff phones are lost and
+ * shared, so it expires on its own rather than depending on someone
+ * remembering to sign anyone out. `Revoke` kills this one link immediately,
+ * by its `jti`, without rotating the secret every other gate's link is
+ * signed with.
+ */
+function GateStaffSection({ eventId }: { eventId: string }) {
+  const [gate, setGate] = useState('main');
+  const [ttlHours, setTtlHours] = useState('12');
+  const [minted, setMinted] = useState<ScannerToken | null>(null);
+  const [revoked, setRevoked] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleMint(formEvent: React.FormEvent) {
+    formEvent.preventDefault();
+    if (busy) return;
+
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await mintScannerToken(eventId, {
+        gate: gate.trim() || undefined,
+        ttlHours: Number(ttlHours) || undefined,
+      });
+      setMinted(result);
+      setRevoked(false);
+      setCopied(false);
+    } catch (caught) {
+      setError(caught instanceof ApiError ? caught.message : 'Could not create that link.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRevoke() {
+    if (!minted || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await revokeScannerToken(minted.jti);
+      setRevoked(true);
+    } catch (caught) {
+      setError(caught instanceof ApiError ? caught.message : 'Could not revoke that link.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Built from the browser's own origin rather than an env var — this page
+  // already knows where it is being viewed from, which is exactly where
+  // `/scan` lives too.
+  const link = minted ? `${window.location.origin}/scan?token=${minted.token}` : null;
+
+  async function copyLink() {
+    if (!link) return;
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setError('Could not copy — select and copy the link below instead.');
+    }
+  }
+
+  return (
+    <div className="mt-10">
+      <h2 className="md-title-large mb-4">Gate staff</h2>
+      <Card className="p-5">
+        <p className="md-body-medium text-on-surface-variant">
+          Create a link for whoever is scanning tickets at the door. It only works
+          for this event, needs no account on their phone, and stops working on
+          its own once it expires.
+        </p>
+
+        <form onSubmit={handleMint} className="mt-5 flex flex-wrap items-end gap-4">
+          <label className="block">
+            <span className="md-label-large text-on-surface-variant">Gate name</span>
+            <input
+              value={gate}
+              onChange={(e) => setGate(e.target.value)}
+              maxLength={60}
+              placeholder="main"
+              className={`${inputClass} mt-1.5 w-40`}
+            />
+          </label>
+
+          <label className="block">
+            <span className="md-label-large text-on-surface-variant">Hours valid</span>
+            <input
+              value={ttlHours}
+              onChange={(e) => setTtlHours(e.target.value)}
+              inputMode="numeric"
+              placeholder="12"
+              className={`${inputClass} mt-1.5 w-24 font-data`}
+            />
+          </label>
+
+          <Button type="submit" variant="gold" busy={busy} busyLabel="Creating…">
+            Create link
+          </Button>
+        </form>
+
+        {error && (
+          <p role="alert" className="md-body-medium mt-3 text-error">
+            {error}
+          </p>
+        )}
+
+        {minted && link && (
+          <div className="mt-5 rounded-sm border border-outline-variant p-4">
+            {revoked ? (
+              <p className="md-body-medium text-error">
+                This link has been revoked — door staff using it will be asked to
+                sign in again.
+              </p>
+            ) : (
+              <>
+                <p className="md-body-small text-on-surface-variant">
+                  Expires {new Date(minted.expiresAt).toLocaleString()}
+                </p>
+                <p className="md-body-medium mt-2 font-mono text-on-surface break-all">
+                  {link}
+                </p>
+                <div className="mt-3 flex flex-wrap gap-3">
+                  <Button type="button" variant="outlined" onClick={copyLink}>
+                    {copied ? 'Copied' : 'Copy link'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outlined"
+                    onClick={handleRevoke}
+                    busy={busy}
+                    busyLabel="Revoking…"
+                  >
+                    Revoke
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
 function Detail({ eventId }: { eventId: string }) {
   const [event, setEvent] = useState<AdminEvent | null>(null);
   const [tiers, setTiers] = useState<AdminTier[] | null>(null);
@@ -381,6 +536,8 @@ function Detail({ eventId }: { eventId: string }) {
           })}
         </div>
       )}
+
+      <GateStaffSection eventId={eventId} />
     </div>
   );
 }
